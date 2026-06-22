@@ -81,42 +81,50 @@ module.exports = (client) => {
       { upsert: true }
     );
 
-    // CORREÇÃO: Envio usando a API do Resend via HTTPS (Porta 443 - Impossível de ser bloqueada pelo Railway)
-    if (process.env.RESEND_API_KEY) {
+    // ENVIO USANDO A API HTTP DO BREVO (Porta 443 - Totalmente compatível com o Railway sem bloqueios e sem exigir domínio próprio)
+    if (process.env.BREVO_API_KEY) {
       try {
-        const response = await fetch('https://api.resend.com/emails', {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json'
+            'api-key': process.env.BREVO_API_KEY,
+            'accept': 'application/json',
+            'content-type': 'application/json'
           },
           body: JSON.stringify({
-            from: 'onboarding@resend.dev', // Remetente temporário padrão do Resend para testes
-            to: email,
+            sender: {
+              name: 'Krypton Security',
+              email: process.env.SMTP_USER || 'krypton.noreply@gmail.com' // Seu Gmail remetente validado no Brevo
+            },
+            to: [
+              {
+                email: email
+              }
+            ],
             subject: '🔐 Código de Segurança - Painel Krypton',
-            html: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
-                    <h2 style="color: #8b5cf6;">Krypton Security</h2>
-                    <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar seu acesso no Painel Administrativo.</p>
-                    <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${otpCode}</div>
-                    <p style="font-size: 11px; color: #64748b;">Esse código expira em 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
-                   </div>`
+            htmlContent: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
+                            <h2 style="color: #8b5cf6;">Krypton Security</h2>
+                            <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar seu acesso no Painel Administrativo do bot.</p>
+                            <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${otpCode}</div>
+                            <p style="font-size: 11px; color: #64748b;">Esse código expira em 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
+                           </div>`
           })
         });
 
         const resData = await response.json();
         if (response.ok) {
-          console.log(`\n[RESEND SUCESSO] E-mail enviado com sucesso! ID: ${resData.id}\n`);
+          console.log(`\n[BREVO SUCESSO] E-mail de código disparado com sucesso! ID: ${resData.messageId}\n`);
         } else {
-          console.error('\n[RESEND ERRO]:', resData);
+          console.error('\n[BREVO ERRO]:', resData);
         }
       } catch (err) {
-        console.error('\n[RESEND FALHA CONEXÃO]:', err.message);
+        console.error('\n[BREVO FALHA CONEXÃO]:', err.message);
       }
     } else {
-      console.warn('\n[Aviso] Variável RESEND_API_KEY não encontrada. O e-mail não foi disparado.\n');
+      console.warn('\n[Aviso] Variável BREVO_API_KEY não configurada no Railway. O e-mail não foi disparado.\n');
     }
 
-    // Mantém a exibição paralela no terminal para desenvolvimento
+    // Mantém a exibição no terminal para contingência
     console.log('\n=============================================');
     console.log(`[CÓDIGO DE VERIFICAÇÃO OTP GERADO PARA ${email}]: ${otpCode}`);
     console.log('=============================================\n');
