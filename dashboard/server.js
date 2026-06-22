@@ -5,6 +5,7 @@ const DiscordOAuth2 = require('discord-oauth2');
 const nodemailer = require('nodemailer');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
+const { liveUpdatePanel } = require('../utils/panelUpdater'); // Importação do novo utilitário
 
 module.exports = (client) => {
   const app = express();
@@ -17,14 +18,13 @@ module.exports = (client) => {
     redirectUri: `${process.env.DASHBOARD_URL}/auth/callback`
   });
 
-  // Configuração do Transportador do Nodemailer usando credenciais do .env
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: false, 
     auth: {
-      user: process.env.SMTP_USER || '', // Seu e-mail de envio
-      pass: process.env.SMTP_PASS || ''  // Sua senha do e-mail (ou senha de aplicativo)
+      user: process.env.SMTP_USER || '', 
+      pass: process.env.SMTP_PASS || ''  
     }
   });
 
@@ -43,7 +43,6 @@ module.exports = (client) => {
     }
   }));
 
-  // Middleware para verificar se está logado pelo Discord
   function checkAuth(req, res, next) {
     if (req.session && req.session.user) {
       return next();
@@ -51,7 +50,6 @@ module.exports = (client) => {
     res.redirect('/');
   }
 
-  // Middleware para verificar se passou pela validação de e-mail OTP
   async function checkVerifiedEmail(req, res, next) {
     if (!req.session.user) return res.redirect('/');
     
@@ -64,7 +62,6 @@ module.exports = (client) => {
     res.redirect('/verify-email');
   }
 
-  // Página Inicial
   app.get('/', (req, res) => {
     res.render('index', { 
       user: req.session.user || null, 
@@ -72,24 +69,21 @@ module.exports = (client) => {
     });
   });
 
-  // Rota para digitação do E-mail
   app.get('/verify-email', checkAuth, async (req, res) => {
     const dbUser = await User.findOne({ discordId: req.session.user.id });
     if (dbUser && dbUser.isVerified) return res.redirect('/dashboard');
     res.render('verify-email', { user: req.session.user, error: req.query.error || null });
   });
 
-  // Rota POST para gerar e enviar OTP por e-mail
   app.post('/verify-email', checkAuth, async (req, res) => {
     const { email } = req.body;
     if (!email || !email.includes('@')) {
       return res.redirect('/verify-email?error=E-mail inválido');
     }
 
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString(); // Gera código de 6 dígitos
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // Expira em 10 minutos
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Define cargo master se for o e-mail do comprador principal
     const role = email.toLowerCase() === 'mafiosodashopping@gmail.com' ? 'superadmin' : 'user';
 
     await User.findOneAndUpdate(
@@ -98,7 +92,6 @@ module.exports = (client) => {
       { upsert: true }
     );
 
-    // Envio do e-mail real utilizando o Nodemailer
     const mailOptions = {
       from: `"Krypton Security" <${process.env.SMTP_USER || 'no-reply@krypton.com'}>`,
       to: email,
@@ -112,7 +105,6 @@ module.exports = (client) => {
       }
     });
 
-    // CONTINGÊNCIA PROFISSIONAL: Printa o código gerado nos logs do Railway para que você consiga usar sem configurar SMTP
     console.log('\n=============================================');
     console.log(`[CÓDIGO DE VERIFICAÇÃO OTP GERADO PARA ${email}]: ${otpCode}`);
     console.log('=============================================\n');
@@ -120,7 +112,6 @@ module.exports = (client) => {
     res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
   });
 
-  // Tela de digitação do código OTP
   app.get('/verify-otp', checkAuth, (req, res) => {
     res.render('verify-otp', { 
       user: req.session.user, 
@@ -129,7 +120,6 @@ module.exports = (client) => {
     });
   });
 
-  // POST para validar o código OTP
   app.post('/verify-otp', checkAuth, async (req, res) => {
     const { email, code } = req.body;
     const dbUser = await User.findOne({ discordId: req.session.user.id });
@@ -151,7 +141,6 @@ module.exports = (client) => {
     });
   });
 
-  // Login via OAuth2 Discord
   app.get('/auth/login', (req, res) => {
     const url = oauth.generateAuthUrl({
       scope: ['identify', 'guilds'],
@@ -192,7 +181,6 @@ module.exports = (client) => {
     });
   });
 
-  // Lista de servidores - Exige e-mail verificado
   app.get('/dashboard', checkAuth, checkVerifiedEmail, (req, res) => {
     res.render('dashboard', { 
       user: req.session.user, 
@@ -201,7 +189,6 @@ module.exports = (client) => {
     });
   });
 
-  // Configuração de Servidor - Exige e-mail verificado
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
@@ -240,7 +227,6 @@ module.exports = (client) => {
     }
   });
 
-  // ROTA SUPERADMIN: Controla a presença/status global do bot em tempo real (Apenas mafiosodashopping@gmail.com)
   app.post('/developer/presence', checkAuth, checkVerifiedEmail, (req, res) => {
     if (req.session.userRole !== 'superadmin') {
       return res.status(403).send('Acesso não autorizado.');
@@ -248,19 +234,17 @@ module.exports = (client) => {
 
     const { activityName, activityType, status } = req.body;
 
-    // Atualiza status e presença do bot instantaneamente no Discord
     client.user.setPresence({
       status: status || 'online',
       activities: [{
         name: activityName || 'canais de suporte',
-        type: parseInt(activityType || '3') // Watching, Playing, etc.
+        type: parseInt(activityType || '3')
       }]
     });
 
     res.redirect('/dashboard?presence_success=true');
   });
 
-  // Salvar alterações enviadas do painel administrativo
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
@@ -295,46 +279,8 @@ module.exports = (client) => {
         { upsert: true }
       );
 
-      // CORREÇÃO: Atualiza a mensagem pública no Discord em tempo real
-      const helper = require('../events/interactionCreate');
-      const liveUpdate = helper.name === 'interactionCreate' ? true : false;
-      
-      // Chamada assíncrona do Live Update no canal público
-      const discordGuild = client.guilds.cache.get(guildId);
-      if (discordGuild) {
-        const channelConfig = await GuildConfig.findOne({ guildId });
-        if (channelConfig && channelConfig.panelChannelId && channelConfig.panelMessageId) {
-          const channel = await client.channels.fetch(channelConfig.panelChannelId).catch(() => null);
-          if (channel) {
-            const message = await channel.messages.fetch(channelConfig.panelMessageId).catch(() => null);
-            if (message) {
-              const embed = new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(description)
-                .setColor(color || '#5865F2');
-
-              if (thumbnail) embed.setThumbnail(thumbnail);
-              if (image) embed.setImage(image);
-
-              const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('ticket_category_select')
-                .setPlaceholder(active === 'true' ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE')
-                .setDisabled(active !== 'true')
-                .addOptions(
-                  updatedCategories.map(cat => ({
-                    label: cat.label,
-                    description: cat.description || '',
-                    value: cat.value,
-                    emoji: cat.emoji || undefined
-                  }))
-                );
-
-              const row = new ActionRowBuilder().addComponents(selectMenu);
-              await message.edit({ embeds: [embed], components: [row] }).catch(() => null);
-            }
-          }
-        }
-      }
+      // Chamada do utilitário de atualização em tempo real, eliminando dependência circular
+      await liveUpdatePanel(client, guildId);
 
       res.redirect(`/dashboard/${guildId}?success=true`);
     } catch (dbError) {
