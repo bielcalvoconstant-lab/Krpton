@@ -5,7 +5,7 @@ const DiscordOAuth2 = require('discord-oauth2');
 const nodemailer = require('nodemailer');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
-const { liveUpdatePanel } = require('../utils/panelUpdater'); // Importação do novo utilitário
+const { liveUpdatePanel } = require('../utils/panelUpdater');
 
 module.exports = (client) => {
   const app = express();
@@ -18,10 +18,13 @@ module.exports = (client) => {
     redirectUri: `${process.env.DASHBOARD_URL}/auth/callback`
   });
 
+  // CORREÇÃO: Configuração robusta e nativa usando o helper "service: 'gmail'".
+  // Isso resolve automaticamente problemas de TLS/SSL de servidores de hospedagem como o Railway.
   const transporter = nodemailer.createTransport({
+    service: process.env.SMTP_HOST && process.env.SMTP_HOST.includes('gmail') ? 'gmail' : undefined,
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false, 
+    secure: process.env.SMTP_PORT === '465', // true para 465, false para 587/outras
     auth: {
       user: process.env.SMTP_USER || '', 
       pass: process.env.SMTP_PASS || ''  
@@ -93,15 +96,19 @@ module.exports = (client) => {
     );
 
     const mailOptions = {
-      from: `"Krypton Security" <${process.env.SMTP_USER || 'no-reply@krypton.com'}>`,
+      from: `"Krypton Security" <${process.env.SMTP_USER}>`,
       to: email,
       subject: '🔐 Código de Segurança - Painel Krypton',
       text: `Olá! Seu código de verificação para o Krypton Bot é: ${otpCode}. Ele expira em 10 minutos.`
     };
 
+    // CORREÇÃO: Função de envio detalhada que imprime o erro real do Google no console do Railway para diagnóstico
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
-        console.warn('[NODEMAILERAVISO] Falha ao enviar e-mail. Usando contingência de terminal.');
+        console.error('\n[ERRO SMTP DETALHADO DO GMAIL]:', error.message || error);
+        console.warn('[NODEMAILERAVISO] Falha ao enviar e-mail. Usando contingência de terminal.\n');
+      } else {
+        console.log(`\n[SMTP SUCESSO] E-mail de código enviado para ${email}! ID: ${info.messageId}\n`);
       }
     });
 
@@ -279,7 +286,6 @@ module.exports = (client) => {
         { upsert: true }
       );
 
-      // Chamada do utilitário de atualização em tempo real, eliminando dependência circular
       await liveUpdatePanel(client, guildId);
 
       res.redirect(`/dashboard/${guildId}?success=true`);
