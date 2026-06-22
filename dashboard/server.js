@@ -2,7 +2,6 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const DiscordOAuth2 = require('discord-oauth2');
-const nodemailer = require('nodemailer');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
@@ -16,19 +15,6 @@ module.exports = (client) => {
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     redirectUri: `${process.env.DASHBOARD_URL}/auth/callback`
-  });
-
-  // CORREÇÃO: Configuração robusta e nativa usando o helper "service: 'gmail'".
-  // Isso resolve automaticamente problemas de TLS/SSL de servidores de hospedagem como o Railway.
-  const transporter = nodemailer.createTransport({
-    service: process.env.SMTP_HOST && process.env.SMTP_HOST.includes('gmail') ? 'gmail' : undefined,
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_PORT === '465', // true para 465, false para 587/outras
-    auth: {
-      user: process.env.SMTP_USER || '', 
-      pass: process.env.SMTP_PASS || ''  
-    }
   });
 
   app.set('views', path.join(__dirname, 'views'));
@@ -95,23 +81,42 @@ module.exports = (client) => {
       { upsert: true }
     );
 
-    const mailOptions = {
-      from: `"Krypton Security" <${process.env.SMTP_USER}>`,
-      to: email,
-      subject: '🔐 Código de Segurança - Painel Krypton',
-      text: `Olá! Seu código de verificação para o Krypton Bot é: ${otpCode}. Ele expira em 10 minutos.`
-    };
+    // CORREÇÃO: Envio usando a API do Resend via HTTPS (Porta 443 - Impossível de ser bloqueada pelo Railway)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'onboarding@resend.dev', // Remetente temporário padrão do Resend para testes
+            to: email,
+            subject: '🔐 Código de Segurança - Painel Krypton',
+            html: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
+                    <h2 style="color: #8b5cf6;">Krypton Security</h2>
+                    <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar seu acesso no Painel Administrativo.</p>
+                    <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${otpCode}</div>
+                    <p style="font-size: 11px; color: #64748b;">Esse código expira em 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
+                   </div>`
+          })
+        });
 
-    // CORREÇÃO: Função de envio detalhada que imprime o erro real do Google no console do Railway para diagnóstico
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error('\n[ERRO SMTP DETALHADO DO GMAIL]:', error.message || error);
-        console.warn('[NODEMAILERAVISO] Falha ao enviar e-mail. Usando contingência de terminal.\n');
-      } else {
-        console.log(`\n[SMTP SUCESSO] E-mail de código enviado para ${email}! ID: ${info.messageId}\n`);
+        const resData = await response.json();
+        if (response.ok) {
+          console.log(`\n[RESEND SUCESSO] E-mail enviado com sucesso! ID: ${resData.id}\n`);
+        } else {
+          console.error('\n[RESEND ERRO]:', resData);
+        }
+      } catch (err) {
+        console.error('\n[RESEND FALHA CONEXÃO]:', err.message);
       }
-    });
+    } else {
+      console.warn('\n[Aviso] Variável RESEND_API_KEY não encontrada. O e-mail não foi disparado.\n');
+    }
 
+    // Mantém a exibição paralela no terminal para desenvolvimento
     console.log('\n=============================================');
     console.log(`[CÓDIGO DE VERIFICAÇÃO OTP GERADO PARA ${email}]: ${otpCode}`);
     console.log('=============================================\n');
