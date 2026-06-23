@@ -8,7 +8,7 @@ const GuildConfigSchema = new mongoose.Schema({
   ticketCategory: { type: String, default: null },
   maxTickets: { type: Number, default: 3 },
   active: { type: Boolean, default: true },
-  ticketCount: { type: Number, default: 0 }, // Contador sequencial de tickets do servidor
+  ticketCount: { type: Number, default: 0 },
   panelChannelId: { type: String, default: null },
   panelMessageId: { type: String, default: null },
   panelEmbed: {
@@ -21,9 +21,9 @@ const GuildConfigSchema = new mongoose.Schema({
   categories: {
     type: Array,
     default: [
-      { value: 'suporte', label: 'Suporte Geral', description: 'Dúvidas e assistência básica', emoji: '💬' },
-      { value: 'financeiro', label: 'Financeiro', description: 'Questões relacionadas a pagamentos', emoji: '💳' },
-      { value: 'denuncia', label: 'Denúncias', description: 'Reportar infrações ou abusos', emoji: '⚠️' }
+      { value: 'suporte', label: 'Suporte Geral', description: 'Dúvidas e assistência básica', emoji: '💬', active: true },
+      { value: 'financeiro', label: 'Financeiro', description: 'Questões relacionadas a pagamentos', emoji: '💳', active: true },
+      { value: 'denuncia', label: 'Denúncias', description: 'Reportar infrações ou abusos', emoji: '⚠️', active: true }
     ]
   }
 });
