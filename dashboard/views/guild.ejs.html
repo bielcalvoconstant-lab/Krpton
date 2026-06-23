@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Krypton | Configurações</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0f172a] text-slate-100 min-h-screen font-sans antialiased">
+
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+      <div class="flex items-center gap-4">
+        <% if (guild.icon) { %>
+          <img src="https://cdn.discordapp.com/icons/<%= guild.id %>/<%= guild.icon %>.png" class="w-12 h-12 rounded-2xl border border-slate-800" />
+        <% } else { %>
+          <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-violet-400"><%= guild.name[0] %></div>
+        <% } %>
+        <div>
+          <h1 class="text-2xl font-black text-slate-100"><%= guild.name %></h1>
+          <p class="text-xs text-slate-400">Configure as preferências e canais de suporte do bot</p>
+        </div>
+      </div>
+      <a href="/dashboard" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-4 py-2.5 rounded-xl border border-slate-700/80 transition-all text-sm shadow">
+        &larr; Voltar para a lista
+      </a>
+    </div>
+
+    <!-- Alerta de Sucesso -->
+    <% if (typeof query !== 'undefined' && query.success) { %>
+      <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-xl mb-6 text-sm">
+        Configurações salvas com sucesso no banco de dados e sincronizadas no Discord em tempo real!
+      </div>
+    <% } %>
+
+    <!-- Form & Preview Container -->
+    <form action="/dashboard/<%= guild.id %>/save" method="POST" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Coluna de Configurações -->
+      <div class="lg:col-span-7 space-y-6">
+        
+        <!-- Bloco 1: Estrutura de Canais -->
+        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
+          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
+            📂 Estrutura de Canais
+          </h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Categoria dos Tickets</label>
+              <select name="ticketCategory" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+                <option value="">Nenhuma Categoria</option>
+                <% channels.filter(c => c.type === 4).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.ticketCategory === ch.id ? 'selected' : '' %>><%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Canal de Transcripts</label>
+              <select name="transcriptChannelId" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+                <option value="">Sem Canal Definido</option>
+                <% channels.filter(c => c.type === 0).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.transcriptChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Canal de Log de Atividade</label>
+            <select name="logChannelId" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+              <option value="">Sem Canal Definido</option>
+              <% channels.filter(c => c.type === 0).forEach(ch => { %>
+                <option value="<%= ch.id %>" <%= config.logChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <!-- Bloco 2: Status do Sistema & Cargos Staff -->
+        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
+          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
+            🛡️ Ativação & Equipe de Atendimento
+          </h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status do Sistema de Tickets</label>
+              <select name="active" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+                <option value="true" <%= config.active !== false ? 'selected' : '' %>>🟢 Ativado (Permite abertura)</option>
+                <option value="false" <%= config.active === false ? 'selected' : '' %>>🔴 Desativado (Bloqueia novos tickets)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cargos da Equipe / Staff (Selecione vários)</label>
+              <div class="space-y-2 max-h-36 overflow-y-auto bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <% roles.forEach(role => { %>
+                  <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-900 p-1 rounded transition text-xs">
+                    <input type="checkbox" name="staffRoleIds" value="<%= role.id %>" <%= config.staffRoleIds && config.staffRoleIds.includes(role.id) ? 'checked' : '' %> class="rounded border-slate-800 text-violet-600 focus:ring-violet-500 bg-slate-950" />
+                    <span class="text-slate-200 truncate"><%= role.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloco 3: Edição Dinâmica de Categorias (Adicionar / Remover) -->
+        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h2 class="text-lg font-bold flex items-center gap-2">
+              🏷️ Editar Categorias de Suporte
+            </h2>
+            <button type="button" onclick="addCategoryRow()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold py-1.5 px-3 rounded-xl transition">
+              + Adicionar
+            </button>
+          </div>
+          
+          <div id="categories-container" class="space-y-4">
+            <% config.categories.forEach((cat, index) => { %>
+              <div class="category-row bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 relative space-y-3" id="cat-row-<%= index %>">
+                <button type="button" onclick="removeCategoryRow(<%= index %>)" class="absolute top-2 right-3 text-red-500 hover:text-red-400 text-xs font-bold transition">Remover</button>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div class="md:col-span-2">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome da Categoria</label>
+                    <input type="text" name="catLabel[]" value="<%= cat.label %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" required />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Emoji</label>
+                    <input type="text" name="catEmoji[]" value="<%= cat.emoji %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none text-center" required />
+                  </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição</label>
+                    <input type="text" name="catDesc[]" value="<%= cat.description %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Chave / ID do Botão</label>
+                    <input type="text" name="catValue[]" value="<%= cat.value %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
+                  </div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+
+        <!-- Bloco 4: Textos & Imagens do Painel -->
+        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
+          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
+            ✍️ Conteúdo & Imagens do Painel
+          </h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Título do Painel de Suporte</label>
+              <input type="text" id="titleInput" name="title" value="<%= config.panelEmbed.title %>" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" required />
+            </div>
+            
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Descrição / Mensagem</label>
+              <textarea id="descInput" name="description" rows="4" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none resize-none" required><%= config.panelEmbed.description %></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">URL da Miniatura (Thumbnail)</label>
+                <input type="url" id="thumbnailInput" name="thumbnail" value="<%= config.panelEmbed.thumbnail || '' %>" placeholder="Ex: https://dominio.com/logo.png" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">URL do Banner / Imagem Principal</label>
+                <input type="url" id="imageInput" name="image" value="<%= config.panelEmbed.image || '' %>" placeholder="Ex: https://dominio.com/banner.png" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cor da Borda Lateral</label>
+              <div class="flex items-center gap-3">
+                <input type="color" id="colorInput" name="color" value="<%= config.panelEmbed.color %>" class="w-14 h-11 bg-transparent cursor-pointer rounded-lg border-none" />
+                <span class="text-xs text-slate-400">Escolha uma cor de realce da janela de suporte</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-sm shadow-lg shadow-violet-600/20">
+          Salvar Todas as Configurações
+        </button>
+      </div>
+
+      <!-- Coluna de Prévia Visual -->
+      <div class="lg:col-span-5">
+        <div class="sticky top-8 space-y-4">
+          <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Simulação do Painel no Discord</span>
+          
+          <!-- Mockup Discord Message -->
+          <div class="bg-[#313338] p-4 rounded-xl shadow-xl border border-black/20 flex gap-4 text-sm font-sans">
+            <div class="w-10 h-10 rounded-full bg-violet-600 flex-shrink-0 flex items-center justify-center font-bold text-white text-base">
+              K
+            </div>
+            <div class="space-y-2 w-full overflow-hidden">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-white">Krypton</span>
+                <span class="bg-[#5865F2] text-white text-[10px] font-bold px-1.5 py-0.5 rounded">BOT</span>
+                <span class="text-xs text-[#949ba4]">Hoje às 12:00</span>
+              </div>
+              
+              <!-- Embed Box -->
+              <div id="previewCard" class="bg-[#2b2d31] p-4 rounded-md border-l-4 border-violet-500 max-w-full space-y-3 relative">
+                <div class="flex justify-between items-start gap-4">
+                  <div id="previewTitle" class="font-bold text-white text-sm md:text-base break-all pr-4">
+                    <%= config.panelEmbed.title %>
+                  </div>
+                  <img id="previewThumbnail" src="<%= config.panelEmbed.thumbnail || '' %>" class="w-12 h-12 rounded object-cover flex-shrink-0 <%= config.panelEmbed.thumbnail ? '' : 'hidden' %>" />
+                </div>
+                <div id="previewDesc" class="text-[#dbdee1] text-xs leading-relaxed whitespace-pre-wrap">
+                  <%= config.panelEmbed.description %>
+                </div>
+                <img id="previewImage" src="<%= config.panelEmbed.image || '' %>" class="w-full rounded mt-2 object-cover max-h-40 <%= config.panelEmbed.image ? '' : 'hidden' %>" />
+              </div>
+
+              <!-- Button/Select Mockup -->
+              <div class="bg-[#1e1f22] p-3.5 rounded border border-[#3f4147] flex justify-between items-center max-w-full">
+                <span class="text-[#949ba4] text-xs">Selecione uma categoria para suporte...</span>
+                <span class="text-[#949ba4] text-xs">&darr;</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </form>
+  </div>
+
+  <script>
+    const titleInput = document.getElementById('titleInput');
+    const descInput = document.getElementById('descInput');
+    const colorInput = document.getElementById('colorInput');
+    const thumbnailInput = document.getElementById('thumbnailInput');
+    const imageInput = document.getElementById('imageInput');
+    
+    const previewTitle = document.getElementById('previewTitle');
+    const previewDesc = document.getElementById('previewDesc');
+    const previewCard = document.getElementById('previewCard');
+    const previewThumbnail = document.getElementById('previewThumbnail');
+    const previewImage = document.getElementById('previewImage');
+
+    function updatePreview() {
+      previewTitle.innerText = titleInput.value || 'Mensagem do Sistema';
+      previewDesc.innerText = descInput.value || 'Por favor, selecione uma opção abaixo para falar com um moderador.';
+      previewCard.style.borderColor = colorInput.value;
+
+      if (thumbnailInput.value && thumbnailInput.value.trim() !== '') {
+        previewThumbnail.src = thumbnailInput.value;
+        previewThumbnail.classList.remove('hidden');
+      } else {
+        previewThumbnail.classList.add('hidden');
+      }
+
+      if (imageInput.value && imageInput.value.trim() !== '') {
+        previewImage.src = imageInput.value;
+        previewImage.classList.remove('hidden');
+      } else {
+        previewImage.classList.add('hidden');
+      }
+    }
+
+    // Código de Manipulação Dinâmica de Adição e Remoção de Categorias
+    let catCounter = <%= config.categories.length %>;
+    
+    function removeCategoryRow(index) {
+      const row = document.getElementById('cat-row-' + index);
+      if (row) {
+        row.remove();
+      }
+    }
+
+    function addCategoryRow() {
+      const container = document.getElementById('categories-container');
+      const randomId = Math.random().toString(36).substring(7);
+      const newRow = document.createElement('div');
+      newRow.className = "category-row bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 relative space-y-3";
+      newRow.id = 'cat-row-' + catCounter;
+      newRow.innerHTML = `
+        <button type="button" onclick="removeCategoryRow(${catCounter})" class="absolute top-2 right-3 text-red-500 hover:text-red-400 text-xs font-bold transition">Remover</button>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="md:col-span-2">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome da Categoria</label>
+            <input type="text" name="catLabel[]" placeholder="Ex: Suporte Geral" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" required />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Emoji</label>
+            <input type="text" name="catEmoji[]" placeholder="💬" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none text-center" required />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição</label>
+            <input type="text" name="catDesc[]" placeholder="Fale com a nossa staff" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Chave / ID do Botão</label>
+            <input type="text" name="catValue[]" value="categoria_${randomId}" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
+          </div>
+        </div>
+      `;
+      container.appendChild(newRow);
+      catCounter++;
+    }
+
+    titleInput.addEventListener('input', updatePreview);
+    descInput.addEventListener('input', updatePreview);
+    colorInput.addEventListener('input', updatePreview);
+    thumbnailInput.addEventListener('input', updatePreview);
+    imageInput.addEventListener('input', updatePreview);
+    
+    updatePreview();
+  </script>
+</body>
+</html>
