@@ -8,7 +8,7 @@ const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
 
-// Funções Auxiliares de Criptografia Segura (PBKDF2 nativo do Node.js)
+// Funções Auxiliares de Criptografia Segura (Nativas do Node.js)
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
@@ -59,7 +59,7 @@ module.exports = (client) => {
     }
   }));
 
-  // Middlewares de Validação de Acesso
+  // Middlewares de verificação de autenticação
   function checkAuth(req, res, next) {
     if (req.session && req.session.user) {
       return next();
@@ -78,9 +78,9 @@ module.exports = (client) => {
     res.redirect('/verify-otp?email=' + encodeURIComponent(req.session.user.email));
   }
 
-  // --- ROTAS DO SISTEMA DE LOGIN LOCAL (E-MAIL + SENHA) ---
+  // --- ROTAS DO SITE ---
 
-  // Página Inicial Informativa
+  // Página Inicial
   app.get('/', (req, res) => {
     res.render('index', { 
       user: req.session.user || null, 
@@ -88,13 +88,13 @@ module.exports = (client) => {
     });
   });
 
-  // Tela de Login
+  // Tela de Login Local (E-mail + Senha)
   app.get('/login', (req, res) => {
     if (req.session.user) return res.redirect('/dashboard');
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'login' });
   });
 
-  // POST Login
+  // POST Login Local
   app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/login?error=Preencha todos os campos.');
@@ -105,14 +105,12 @@ module.exports = (client) => {
         return res.redirect('/login?error=Credenciais inválidas.');
       }
 
-      // Gera código 2FA descartável (OTP)
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       dbUser.otp = otpCode;
       dbUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
       dbUser.isVerified = false;
       await dbUser.save();
 
-      // Envia OTP
       sendSecurityEmail(email, otpCode);
 
       req.session.user = { email: dbUser.email, id: dbUser.discordId };
@@ -120,16 +118,16 @@ module.exports = (client) => {
         res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
       });
     } catch (err) {
-      res.redirect('/login?error=Erro interno.');
+      res.redirect('/login?error=Erro interno de autenticação.');
     }
   });
 
-  // Tela de Cadastro
+  // Tela de Cadastro Local
   app.get('/register', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'register' });
   });
 
-  // POST Cadastro
+  // POST Cadastro Local
   app.post('/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/register?error=Preencha todos os campos.');
@@ -159,11 +157,11 @@ module.exports = (client) => {
         res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
       });
     } catch (err) {
-      res.redirect('/register?error=Erro ao criar conta.');
+      res.redirect('/register?error=Erro ao processar o cadastro.');
     }
   });
 
-  // --- RECUPERAÇÃO DE SENHA ("ESQUECI A SENHA") ---
+  // --- RECONECTAR / ESQUECI A SENHA ---
 
   app.get('/forgot-password', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'forgot' });
@@ -173,14 +171,13 @@ module.exports = (client) => {
     const { email } = req.body;
     const dbUser = await User.findOne({ email: email.toLowerCase() });
 
-    if (!dbUser) return res.redirect('/forgot-password?error=E-mail não encontrado.');
+    if (!dbUser) return res.redirect('/forgot-password?error=E-mail não cadastrado no painel.');
 
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     dbUser.resetToken = resetCode;
-    dbUser.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    dbUser.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
     await dbUser.save();
 
-    // Envio do Código de Recuperação
     sendSecurityEmail(email, resetCode, true);
 
     res.redirect(`/reset-password?email=${encodeURIComponent(email)}`);
@@ -195,7 +192,7 @@ module.exports = (client) => {
     const dbUser = await User.findOne({ email: email.toLowerCase() });
 
     if (!dbUser || dbUser.resetToken !== code || new Date() > dbUser.resetTokenExpires) {
-      return res.redirect(`/reset-password?email=${encodeURIComponent(email)}&error=Código inválido ou expirado.`);
+      return res.redirect(`/reset-password?email=${encodeURIComponent(email)}&error=Código incorreto ou expirado.`);
     }
 
     dbUser.password = hashPassword(newPassword);
@@ -203,10 +200,10 @@ module.exports = (client) => {
     dbUser.resetTokenExpires = null;
     await dbUser.save();
 
-    res.redirect('/login?error=Senha alterada com sucesso! Faça login.');
+    res.redirect('/login?error=Senha alterada com sucesso! Faça login com as novas credenciais.');
   });
 
-  // Reenviar Código de Ativação / OTP
+  // Enviar / Reenviar Código OTP
   app.post('/verify-email', async (req, res) => {
     const { email } = req.body;
     const dbUser = await User.findOne({ email: email.toLowerCase() });
@@ -221,7 +218,7 @@ module.exports = (client) => {
     res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
   });
 
-  // Função Global de Disparo de E-mails Seguros via Brevo API
+  // Função auxiliar de envio de emails de segurança por API
   async function sendSecurityEmail(email, code, isReset = false) {
     if (process.env.BREVO_API_KEY) {
       try {
@@ -241,7 +238,7 @@ module.exports = (client) => {
             subject: isReset ? '🔑 Recuperação de Senha - Krypton' : '🔐 Código de Segurança - Painel Krypton',
             htmlContent: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
                             <h2 style="color: #8b5cf6;">Krypton Security</h2>
-                            <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar sua identidade.</p>
+                            <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código de 6 dígitos abaixo para verificar a sua conta.</p>
                             <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${code}</div>
                             <p style="font-size: 11px; color: #64748b;">Esse código expira em instantes. Se você não solicitou este acesso, ignore este e-mail.</p>
                            </div>`
@@ -257,10 +254,10 @@ module.exports = (client) => {
     console.log('=============================================\n');
   }
 
-  // --- ROTAS DO DISCORD OAUTH2 (VINCULAÇÃO DA CONTA) ---
+  // --- ROTAS DO DISCORD OAUTH2 (LOGIN DIRETO / VINCULAÇÃO) ---
 
-  app.get('/verify-email-auth', checkAuth, (req, res) => {
-    // Redireciona para vincular o bot à conta do Discord caso queira
+  // Rota de Redirecionamento de Login do Discord
+  app.get('/auth/login', (req, res) => {
     const url = oauth.generateAuthUrl({
       scope: ['identify', 'guilds'],
       state: 'krypton_secret_state'
@@ -268,6 +265,7 @@ module.exports = (client) => {
     res.redirect(url);
   });
 
+  // Callback de retorno do Discord
   app.get('/auth/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.redirect('/');
@@ -279,38 +277,68 @@ module.exports = (client) => {
         grantType: 'authorization_code'
       });
 
-      const user = await oauth.getUser(tokenData.access_token);
+      const discordUser = await oauth.getUser(tokenData.access_token);
       const guilds = await oauth.getUserGuilds(tokenData.access_token);
 
-      // Vincula o Discord ID à conta de e-mail atual do banco
+      let dbUser;
+
+      // Se já está logado localmente por e-mail, apenas vincula o Discord
       if (req.session.user) {
-        await User.findOneAndUpdate(
+        dbUser = await User.findOneAndUpdate(
           { email: req.session.user.email },
-          { discordId: user.id }
+          { discordId: discordUser.id },
+          { new: true }
         );
-        req.session.user.id = user.id;
       } else {
-        // Se entrou diretamente pelo Discord, tenta achar o usuário por Discord ID
-        const dbUser = await User.findOne({ discordId: user.id });
-        if (dbUser) {
-          req.session.user = { email: dbUser.email, id: dbUser.discordId };
+        // Se entrou diretamente pelo botão do Discord, procura a conta pelo ID do Discord ou E-mail
+        dbUser = await User.findOne({ discordId: discordUser.id });
+        
+        if (!dbUser && discordUser.email) {
+          dbUser = await User.findOne({ email: discordUser.email.toLowerCase() });
+        }
+
+        // NOVO: Registro Automático Seguro se for o primeiro login da conta
+        if (!dbUser) {
+          const randomPassword = crypto.randomBytes(16).toString('hex');
+          const encryptedPassword = hashPassword(randomPassword);
+          const role = discordUser.email && discordUser.email.toLowerCase() === 'mafiosodashopping@gmail.com' ? 'superadmin' : 'user';
+
+          dbUser = await User.create({
+            email: discordUser.email ? discordUser.email.toLowerCase() : `${discordUser.username}@discord-user.com`,
+            password: encryptedPassword,
+            discordId: discordUser.id,
+            isVerified: true, // E-mail verificado pela conta do Discord
+            role
+          });
         } else {
-          return res.redirect('/register?error=Crie uma conta antes de vincular seu Discord.');
+          // Atualiza as chaves da conta existente
+          dbUser.discordId = discordUser.id;
+          dbUser.isVerified = true;
+          await dbUser.save();
         }
       }
 
+      req.session.user = { email: dbUser.email, id: dbUser.discordId };
       req.session.guilds = guilds.filter(g => g.owner || (BigInt(g.permissions) & 8n) === 8n);
-      
+      req.session.userRole = dbUser.role;
+
       req.session.save(() => {
         res.redirect('/dashboard');
       });
     } catch (err) {
-      console.error('[ERRO OAUTH]', err);
-      res.redirect('/');
+      console.error('[ERRO OAUTH CALLBACK]', err);
+      res.redirect('/login?error=Erro ao realizar login com o Discord.');
     }
   });
 
-  // --- ROTAS DO DASHBOARD PRINCIPAL ---
+  // Logout do site
+  app.get('/auth/logout', (req, res) => {
+    req.session.destroy(() => {
+      res.redirect('/');
+    });
+  });
+
+  // --- ROTAS DO PAINEL PRINCIPAL ---
 
   app.get('/verify-otp', checkAuth, (req, res) => {
     res.render('verify-otp', { 
@@ -336,26 +364,15 @@ module.exports = (client) => {
     req.session.isVerifiedEmail = true;
     req.session.userRole = dbUser.role;
 
-    // Se ainda não vinculou Discord, força a vinculação
-    if (!dbUser.discordId) {
-      return res.redirect('/verify-email-auth');
-    }
-
     req.session.save(() => {
       res.redirect('/dashboard');
     });
   });
 
-  app.get('/auth/logout', (req, res) => {
-    req.session.destroy(() => {
-      res.redirect('/');
-    });
-  });
-
+  // Lista de servidores
   app.get('/dashboard', checkAuth, checkVerifiedEmail, (req, res) => {
-    // Se a listagem de guildas estiver vazia, convida a vincular o Discord de novo
     if (!req.session.guilds) {
-      return res.redirect('/verify-email-auth');
+      return res.redirect('/auth/login'); // Força a puxar a lista de servidores se ela estiver ausente
     }
     res.render('dashboard', { 
       user: req.session.user, 
@@ -364,9 +381,10 @@ module.exports = (client) => {
     });
   });
 
+  // Configuração individual de servidor
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
-    if (!req.session.guilds) return res.redirect('/verify-email-auth');
+    if (!req.session.guilds) return res.redirect('/auth/login');
     
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.redirect('/dashboard');
@@ -403,6 +421,7 @@ module.exports = (client) => {
     }
   });
 
+  // ROTA DO DESENVOLVEDOR: Presença global (Apenas mafiosodashopping@gmail.com)
   app.post('/developer/presence', checkAuth, checkVerifiedEmail, (req, res) => {
     if (req.session.userRole !== 'superadmin') {
       return res.status(403).send('Acesso não autorizado.');
@@ -421,6 +440,7 @@ module.exports = (client) => {
     res.redirect('/dashboard?presence_success=true');
   });
 
+  // Salvar configurações do Servidor
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
@@ -440,7 +460,7 @@ module.exports = (client) => {
               label: catLabel[i],
               description: catDesc[i] || '',
               emoji: catEmoji[i] || '💬',
-              active: catStatus[i] !== 'hide' // Salva como true se não estiver ocultado
+              active: catStatus[i] !== 'hide'
             });
           }
         }
@@ -472,7 +492,7 @@ module.exports = (client) => {
         { upsert: true }
       );
 
-      // Atualiza o Discord em background
+      // Atualiza o Discord de forma assíncrona para evitar congelamentos
       liveUpdatePanel(client, guildId);
 
       res.redirect(`/dashboard/${guildId}?success=true`);
