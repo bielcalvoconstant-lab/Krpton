@@ -147,7 +147,28 @@ module.exports = {
       }
     }
 
-    // --- INTERAÇÕES DOS SELETORES DE CONFIGURAÇÃO (DO PAINEL ADMIN) ---
+    // --- SELETOR DE ATIVAR/DESATIVAR CATEGORIAS (FOCADO EM EXIBIR/OCULTAR) ---
+    if (interaction.isStringSelectMenu() && interaction.customId === 'config_select_toggle_category') {
+      await interaction.deferReply({ ephemeral: true });
+      const selectedValue = interaction.values[0];
+
+      const config = await GuildConfig.findOne({ guildId: guild.id });
+      if (!config) return interaction.editReply({ content: 'Configurações de servidor não encontradas.' });
+
+      const category = config.categories.find(cat => cat.value === selectedValue);
+      if (!category) return interaction.editReply({ content: 'Categoria não localizada no banco de dados.' });
+
+      // Alterna o status de exibição
+      category.active = (category.active === false) ? true : false;
+      await config.save();
+
+      // Dispara a atualização em tempo real (seguro/assíncrono)
+      liveUpdatePanel(client, guild.id);
+
+      return interaction.editReply({ content: `A categoria **${category.label}** agora está ${category.active ? '🟢 **EXIBIDA**' : '🔴 **OCULTADA**'} no painel público de suporte.` });
+    }
+
+    // --- SELETORES NATIVOS DE CONFIGURAÇÃO DE CANAIS ---
     if (interaction.isChannelSelectMenu()) {
       await interaction.deferReply({ ephemeral: true });
       const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -196,7 +217,7 @@ module.exports = {
         }
       }
 
-      // CORREÇÃO: Removido o "await" bloqueante da chamada liveUpdatePanel para que ela atualize em segundo plano, acelerando a resposta e acabando com a sensação de "Krypton pensando" infinitamente.
+      // 1. Liga / Desliga o sistema (Assíncrono para evitar lentidão e congelamentos)
       if (buttonId === 'config_toggle_active') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -205,11 +226,11 @@ module.exports = {
         config.active = !config.active;
         await config.save();
 
-        liveUpdatePanel(client, guild.id); // Chamado em background (sem await)
+        liveUpdatePanel(client, guild.id); // Chamado em background (sem await para não travar a UI)
 
         const embed = new EmbedBuilder()
-          .setTitle('⚙️ Central de Configuração - Krypton')
-          .setDescription('Use os botões interativos abaixo para personalizar a aparência do painel de suporte, editar as categorias ou desativar o sistema.')
+          .setTitle('⚙️ Central Suprema de Configuração - Krypton')
+          .setDescription('Selecione os canais de destino e cargos de atendimento nos menus abaixo. Suas alterações são aplicadas instantaneamente no banco de dados e sincronizadas com o painel público.')
           .addFields(
             { name: 'Status do Sistema', value: config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**', inline: true },
             { name: 'Contador de Tickets', value: `🎫 \`#${String(config.ticketCount || 0).padStart(4, '0')}\``, inline: true },
@@ -224,18 +245,39 @@ module.exports = {
           .setStyle(config.active ? ButtonStyle.Danger : ButtonStyle.Success)
           .setEmoji(config.active ? '🔒' : '🔓');
 
-        const btnDesign = new ButtonBuilder().setCustomId('discord_config_panel').setLabel('Editar Texto').setStyle(ButtonStyle.Primary).setEmoji('✍️');
-        const btnImages = new ButtonBuilder().setCustomId('discord_config_images').setLabel('Editar Imagens').setStyle(ButtonStyle.Primary).setEmoji('🖼️');
-        const btnColor = new ButtonBuilder().setCustomId('discord_config_color').setLabel('Editar Cor').setStyle(ButtonStyle.Primary).setEmoji('🌈');
-        const btnCategories = new ButtonBuilder().setCustomId('discord_config_categories').setLabel('Categorias').setStyle(ButtonStyle.Primary).setEmoji('🏷️');
+        const btnToggleCategories = new ButtonBuilder().setCustomId('config_toggle_categories_btn').setLabel('Exibir/Ocultar Botões').setStyle(ButtonStyle.Primary).setEmoji('👁️');
+        const btnDesign = new ButtonBuilder().setCustomId('discord_config_panel').setLabel('Editar Texto').setStyle(ButtonStyle.Secondary).setEmoji('✍️');
+        const btnImages = new ButtonBuilder().setCustomId('discord_config_images').setLabel('Editar Imagens').setStyle(ButtonStyle.Secondary).setEmoji('🖼️');
+        const btnColor = new ButtonBuilder().setCustomId('discord_config_color').setLabel('Editar Cor').setStyle(ButtonStyle.Secondary).setEmoji('🌈');
         const btnSendPanel = new ButtonBuilder().setCustomId('config_send_public_panel').setLabel('Gerar Painel de Tickets').setStyle(ButtonStyle.Secondary).setEmoji('📩');
 
-        const row1 = new ActionRowBuilder().addComponents(btnToggle, btnDesign, btnImages);
-        const row2 = new ActionRowBuilder().addComponents(btnColor, btnCategories, btnSendPanel);
+        const row1 = new ActionRowBuilder().addComponents(btnToggle, btnToggleCategories, btnDesign, btnImages, btnColor);
+        const row2 = new ActionRowBuilder().addComponents(btnSendPanel);
 
         await interaction.message.edit({ embeds: [embed], components: [row1, row2] });
 
         return interaction.editReply({ content: `O sistema de tickets foi ${config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**'} com sucesso.` });
+      }
+
+      // 2. Enviar Menu para Exibir / Ocultar Categorias por botão
+      if (buttonId === 'config_toggle_categories_btn') {
+        const config = await GuildConfig.findOne({ guildId: guild.id });
+        if (!config) return interaction.reply({ content: 'Configurações de servidor não localizadas.', ephemeral: true });
+
+        const selectToggleMenu = new StringSelectMenuBuilder()
+          .setCustomId('config_select_toggle_category')
+          .setPlaceholder('Escolha uma categoria para alterar (Exibir/Ocultar)...')
+          .addOptions(
+            config.categories.map(cat => ({
+              label: cat.label,
+              value: cat.value,
+              description: `Status: ${cat.active !== false ? '🟢 Ativo (Exibido)' : '🔴 Ocultado'}`,
+              emoji: cat.active !== false ? '🟢' : '🔴'
+            }))
+          );
+
+        const row = new ActionRowBuilder().addComponents(selectToggleMenu);
+        return interaction.reply({ content: 'Selecione abaixo qual botão de categoria você deseja **Exibir ou Ocultar** no painel público:', components: [row], ephemeral: true });
       }
 
       if (buttonId === 'discord_config_images') {
@@ -287,50 +329,6 @@ module.exports = {
           .setMinLength(7);
 
         modal.addComponents(new ActionRowBuilder().addComponents(colorInput));
-        await interaction.showModal(modal);
-        return;
-      }
-
-      if (buttonId === 'discord_config_categories') {
-        const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações não encontradas.', ephemeral: true });
-
-        const cat1 = config.categories[0] || { label: 'Suporte', description: 'Geral', emoji: '💬' };
-        const cat2 = config.categories[1] || { label: 'Financeiro', description: 'Faturamento', emoji: '💳' };
-        const cat3 = config.categories[2] || { label: 'Denúncia', description: 'Reportar abusos', emoji: '⚠️' };
-
-        const modal = new ModalBuilder()
-          .setCustomId('modal_config_categories')
-          .setTitle('🏷️ Editar Nomes das Categorias');
-
-        // CORREÇÃO: Textos encurtados de forma estrita para menos de 45 caracteres, impedindo o erro de string length que causava o crash do bot.
-        const inputCat1 = new TextInputBuilder()
-          .setCustomId('cat1_label')
-          .setLabel('Categoria 1 (Nome|Desc.|Emoji)')
-          .setValue(`${cat1.label} | ${cat1.description} | ${cat1.emoji}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const inputCat2 = new TextInputBuilder()
-          .setCustomId('cat2_label')
-          .setLabel('Categoria 2 (Nome|Desc.|Emoji)')
-          .setValue(`${cat2.label} | ${cat2.description} | ${cat2.emoji}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const inputCat3 = new TextInputBuilder()
-          .setCustomId('cat3_label')
-          .setLabel('Categoria 3 (Nome|Desc.|Emoji) [Denúncia]')
-          .setValue(`${cat3.label} | ${cat3.description} | ${cat3.emoji}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(inputCat1),
-          new ActionRowBuilder().addComponents(inputCat2),
-          new ActionRowBuilder().addComponents(inputCat3)
-        );
-
         await interaction.showModal(modal);
         return;
       }
@@ -555,10 +553,10 @@ module.exports = {
             { 'panelEmbed.thumbnail': thumbnail, 'panelEmbed.image': image }
           );
 
-          liveUpdatePanel(client, guild.id); // Chamado em background
-          return interaction.editReply({ content: 'Miniatura e banner configurados com sucesso! O painel ativo foi atualizado.' });
+          liveUpdatePanel(client, guild.id); // Background
+          return interaction.editReply({ content: 'Imagens aplicadas com sucesso! O painel ativo foi atualizado.' });
         } catch (err) {
-          return interaction.editReply({ content: 'Erro ao gravar as imagens no banco de dados.' });
+          return interaction.editReply({ content: 'Erro ao gravar as imagens no banco.' });
         }
       }
 
@@ -566,9 +564,7 @@ module.exports = {
         await interaction.deferReply({ ephemeral: true });
         let color = interaction.fields.getTextInputValue('modal_panel_color').trim();
 
-        if (!color.startsWith('#')) {
-          color = '#' + color;
-        }
+        if (!color.startsWith('#')) color = '#' + color;
 
         try {
           await GuildConfig.findOneAndUpdate(
@@ -576,10 +572,10 @@ module.exports = {
             { 'panelEmbed.color': color }
           );
 
-          liveUpdatePanel(client, guild.id); // Chamado em background
-          return interaction.editReply({ content: `Cor da Embed alterada para **${color}** com sucesso!` });
+          liveUpdatePanel(client, guild.id); // Background
+          return interaction.editReply({ content: `Cor da Embed atualizada para **${color}**!` });
         } catch (err) {
-          return interaction.editReply({ content: 'Erro ao gravar a cor da Embed no banco de dados.' });
+          return interaction.editReply({ content: 'Erro ao salvar a cor.' });
         }
       }
 
@@ -594,32 +590,10 @@ module.exports = {
             { 'panelEmbed.title': title, 'panelEmbed.description': description }
           );
 
-          liveUpdatePanel(client, guild.id); // Chamado em background
-          return interaction.editReply({ content: 'Título e descrição aplicados com sucesso!' });
+          liveUpdatePanel(client, guild.id); // Background
+          return interaction.editReply({ content: 'Textos salvos com sucesso!' });
         } catch (err) {
           return interaction.editReply({ content: 'Falha ao salvar as configurações de texto.' });
-        }
-      }
-
-      if (interaction.customId === 'modal_config_categories') {
-        await interaction.deferReply({ ephemeral: true });
-        const text1 = interaction.fields.getTextInputValue('cat1_label').split('|');
-        const text2 = interaction.fields.getTextInputValue('cat2_label').split('|');
-        const text3 = interaction.fields.getTextInputValue('cat3_label').split('|');
-
-        try {
-          const categories = [
-            { value: 'suporte', label: (text1[0] || 'Suporte').trim(), description: (text1[1] || '').trim(), emoji: (text1[2] || '💬').trim() },
-            { value: 'financeiro', label: (text2[0] || 'Financeiro').trim(), description: (text2[1] || '').trim(), emoji: (text2[2] || '💳').trim() },
-            { value: 'denuncia', label: (text3[0] || 'Denúncia').trim(), description: (text3[1] || '').trim(), emoji: (text3[2] || '⚠️').trim() }
-          ];
-
-          await GuildConfig.findOneAndUpdate({ guildId: guild.id }, { categories });
-
-          liveUpdatePanel(client, guild.id); // Chamado em background
-          return interaction.editReply({ content: 'Nomes das categorias atualizados e sincronizados no Discord em tempo real!' });
-        } catch (err) {
-          return interaction.editReply({ content: 'Erro ao gravar novos nomes de categorias.' });
         }
       }
 
@@ -664,7 +638,7 @@ module.exports = {
       }
     }
 
-    // --- SISTEMA DE AVALIAÇÃO (DMS DO USUÁRIO) ---
+    // --- SISTEMA DE AVALIAÇÃO ---
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ticket_feedback_')) {
       try {
         const ticketDbId = interaction.customId.replace('ticket_feedback_', '');
