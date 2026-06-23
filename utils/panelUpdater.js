@@ -2,21 +2,30 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const GuildConfig = require('../models/GuildConfig');
 
 /**
- * Atualiza o painel público do Discord em tempo real filtrando categorias ativas.
+ * Atualiza o painel público do Discord em tempo real de forma assíncrona e segura.
  * @param {Client} client Instância do cliente do bot.
  * @param {string} guildId ID do servidor do Discord.
  */
 async function liveUpdatePanel(client, guildId) {
-  const config = await GuildConfig.findOne({ guildId });
+  const config = await GuildConfig.findOne({ guildId }).catch(() => null);
   if (!config || !config.panelChannelId || !config.panelMessageId) return;
 
   try {
     const channel = await client.channels.fetch(config.panelChannelId).catch(() => null);
     if (!channel) return;
-    const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
-    if (!message) return;
 
-    // FILTRO: Remove do painel qualquer categoria cujo "active" seja falso (Ocultado)
+    // Tenta buscar a mensagem pública de suporte
+    const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
+    
+    // Se a mensagem foi deletada, limpa os IDs do banco de dados para evitar erros futuros
+    if (!message) {
+      config.panelChannelId = null;
+      config.panelMessageId = null;
+      await config.save().catch(() => null);
+      return;
+    }
+
+    // Filtra e mantém na embed apenas as categorias marcadas como ativas/exibidas
     const activeCategories = config.categories.filter(cat => cat.active !== false);
 
     const embed = new EmbedBuilder()
@@ -41,9 +50,13 @@ async function liveUpdatePanel(client, guildId) {
       );
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
-    await message.edit({ embeds: [embed], components: [row] });
+
+    // Edita a mensagem capturando qualquer rejeição de promessa da API do Discord
+    await message.edit({ embeds: [embed], components: [row] }).catch((err) => {
+      console.warn('[AVISO LIVE UPDATE]: Falha ao editar a mensagem de suporte:', err.message);
+    });
   } catch (err) {
-    console.error('[ERRO LIVE UPDATE]', err.message);
+    console.error('[ERRO INTERNO LIVE UPDATE]:', err.message);
   }
 }
 
