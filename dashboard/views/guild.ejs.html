@@ -6,50 +6,50 @@
   <title>Krypton | Configurações</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-[#0f172a] text-slate-100 min-h-screen font-sans antialiased">
+<body class="bg-[#0b0f19] text-[#e2e8f0] min-h-screen font-sans antialiased selection:bg-violet-500/30">
 
-  <div class="max-w-6xl mx-auto px-4 py-8">
+  <div class="max-w-6xl mx-auto px-6 py-10">
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-      <div class="flex items-center gap-4">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-10 border-b border-[#1e293b]/60 pb-6">
+      <div class="flex items-center gap-5">
         <% if (guild.icon) { %>
-          <img src="https://cdn.discordapp.com/icons/<%= guild.id %>/<%= guild.icon %>.png" class="w-12 h-12 rounded-2xl border border-slate-800" />
+          <img src="https://cdn.discordapp.com/icons/<%= guild.id %>/<%= guild.icon %>.png" class="w-14 h-14 rounded-2xl border border-[#1e293b] shadow-xl" />
         <% } else { %>
-          <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center font-bold text-violet-400"><%= guild.name[0] %></div>
+          <div class="w-14 h-14 rounded-2xl bg-[#1e293b] flex items-center justify-center font-extrabold text-violet-400 text-lg shadow-inner"><%= guild.name[0] %></div>
         <% } %>
         <div>
-          <h1 class="text-2xl font-black text-slate-100"><%= guild.name %></h1>
-          <p class="text-xs text-slate-400">Configure as preferências e canais de suporte do bot</p>
+          <h1 class="text-2xl font-black tracking-tight text-white"><%= guild.name %></h1>
+          <p class="text-xs text-[#94a3b8] mt-1">Configure e sincronize os tickets do bot no seu servidor Discord</p>
         </div>
       </div>
-      <a href="/dashboard" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-4 py-2.5 rounded-xl border border-slate-700/80 transition-all text-sm shadow">
+      <a href="/dashboard" class="bg-[#1e293b]/80 hover:bg-[#334155]/85 text-xs text-[#cbd5e1] font-semibold py-3 px-5 rounded-xl border border-[#334155]/60 transition-all shadow-md">
         &larr; Voltar para a lista
       </a>
     </div>
 
     <!-- Alerta de Sucesso -->
     <% if (typeof query !== 'undefined' && query.success) { %>
-      <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-xl mb-6 text-sm">
-        Configurações salvas com sucesso no banco de dados e sincronizadas no Discord em tempo real!
+      <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-5 py-4 rounded-xl mb-8 text-sm shadow flex items-center gap-2">
+        <span class="text-emerald-500">✔</span> Configurações salvas e aplicadas no Discord em tempo real!
       </div>
     <% } %>
 
     <!-- Form & Preview Container -->
-    <form action="/dashboard/<%= guild.id %>/save" method="POST" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <form action="/dashboard/<%= guild.id %>/save" method="POST" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
       <!-- Coluna de Configurações -->
       <div class="lg:col-span-7 space-y-6">
         
         <!-- Bloco 1: Estrutura de Canais -->
-        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
-          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
+        <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
             📂 Estrutura de Canais
           </h2>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Categoria dos Tickets</label>
-              <select name="ticketCategory" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Categoria dos Tickets</label>
+              <select name="ticketCategory" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none">
                 <option value="">Nenhuma Categoria</option>
                 <% channels.filter(c => c.type === 4).forEach(ch => { %>
                   <option value="<%= ch.id %>" <%= config.ticketCategory === ch.id ? 'selected' : '' %>><%= ch.name %></option>
@@ -58,8 +58,8 @@
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Canal de Transcripts</label>
-              <select name="transcriptChannelId" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal de Transcripts</label>
+              <select name="transcriptChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none">
                 <option value="">Sem Canal Definido</option>
                 <% channels.filter(c => c.type === 0).forEach(ch => { %>
                   <option value="<%= ch.id %>" <%= config.transcriptChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
@@ -69,8 +69,8 @@
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Canal de Log de Atividade</label>
-            <select name="logChannelId" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+            <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal de Log de Atividade</label>
+            <select name="logChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none">
               <option value="">Sem Canal Definido</option>
               <% channels.filter(c => c.type === 0).forEach(ch => { %>
                 <option value="<%= ch.id %>" <%= config.logChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
@@ -80,27 +80,27 @@
         </div>
 
         <!-- Bloco 2: Status do Sistema & Cargos Staff -->
-        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
-          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
+        <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
             🛡️ Ativação & Equipe de Atendimento
           </h2>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status do Sistema de Tickets</label>
-              <select name="active" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none">
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Status do Sistema de Tickets</label>
+              <select name="active" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none">
                 <option value="true" <%= config.active !== false ? 'selected' : '' %>>🟢 Ativado (Permite abertura)</option>
                 <option value="false" <%= config.active === false ? 'selected' : '' %>>🔴 Desativado (Bloqueia novos tickets)</option>
               </select>
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cargos da Equipe / Staff (Selecione vários)</label>
-              <div class="space-y-2 max-h-36 overflow-y-auto bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Cargos da Equipe / Staff (Selecione vários)</label>
+              <div class="space-y-2 max-h-36 overflow-y-auto bg-[#030712] p-3 rounded-xl border border-[#1e293b]">
                 <% roles.forEach(role => { %>
-                  <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-900 p-1 rounded transition text-xs">
-                    <input type="checkbox" name="staffRoleIds" value="<%= role.id %>" <%= config.staffRoleIds && config.staffRoleIds.includes(role.id) ? 'checked' : '' %> class="rounded border-slate-800 text-violet-600 focus:ring-violet-500 bg-slate-950" />
-                    <span class="text-slate-200 truncate"><%= role.name %></span>
+                  <label class="flex items-center gap-2.5 cursor-pointer hover:bg-[#111827] p-1 rounded transition text-[11px]">
+                    <input type="checkbox" name="staffRoleIds" value="<%= role.id %>" <%= config.staffRoleIds && config.staffRoleIds.includes(role.id) ? 'checked' : '' %> class="rounded border-[#1e293b] text-violet-600 focus:ring-violet-500 bg-transparent" />
+                    <span class="text-[#cbd5e1] truncate"><%= role.name %></span>
                   </label>
                 <% }) %>
               </div>
@@ -108,41 +108,49 @@
           </div>
         </div>
 
-        <!-- Bloco 3: Edição Dinâmica de Categorias (Adicionar / Remover) -->
-        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
-          <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-            <h2 class="text-lg font-bold flex items-center gap-2">
+        <!-- Bloco 3: Edição Dinâmica & Opção Mostrar/Ocultar de Categorias -->
+        <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
+          <div class="flex justify-between items-center border-b border-[#1e293b]/40 pb-3">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
               🏷️ Editar Categorias de Suporte
             </h2>
-            <button type="button" onclick="addCategoryRow()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold py-1.5 px-3 rounded-xl transition">
+            <button type="button" onclick="addCategoryRow()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold py-2 px-4 rounded-xl transition shadow shadow-violet-600/10">
               + Adicionar
             </button>
           </div>
           
           <div id="categories-container" class="space-y-4">
             <% config.categories.forEach((cat, index) => { %>
-              <div class="category-row bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 relative space-y-3" id="cat-row-<%= index %>">
-                <button type="button" onclick="removeCategoryRow(<%= index %>)" class="absolute top-2 right-3 text-red-500 hover:text-red-400 text-xs font-bold transition">Remover</button>
+              <div class="category-row bg-[#030712]/50 p-5 rounded-2xl border border-[#1e293b]/50 relative space-y-3 shadow-inner" id="cat-row-<%= index %>">
+                <button type="button" onclick="removeCategoryRow(<%= index %>)" class="absolute top-3 right-4 text-red-400 hover:text-red-300 text-xs font-bold transition">Excluir</button>
                 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div class="md:col-span-2">
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome da Categoria</label>
-                    <input type="text" name="catLabel[]" value="<%= cat.label %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" required />
+                    <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Nome da Categoria</label>
+                    <input type="text" name="catLabel[]" value="<%= cat.label %>" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500" required />
                   </div>
                   <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Emoji</label>
-                    <input type="text" name="catEmoji[]" value="<%= cat.emoji %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none text-center" required />
+                    <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Emoji</label>
+                    <input type="text" name="catEmoji[]" value="<%= cat.emoji %>" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none text-center focus:border-violet-500" required />
+                  </div>
+                  <!-- MOSTRAR / OCULTAR INTERATIVO -->
+                  <div>
+                    <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Exibição</label>
+                    <select name="catStatus[]" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500">
+                      <option value="show" <%= cat.active !== false ? 'selected' : '' %>>🟢 Exibir</option>
+                      <option value="hide" <%= cat.active === false ? 'selected' : '' %>>🔴 Ocultar</option>
+                    </select>
                   </div>
                 </div>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição</label>
-                    <input type="text" name="catDesc[]" value="<%= cat.description %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" />
+                    <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Descrição</label>
+                    <input type="text" name="catDesc[]" value="<%= cat.description %>" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500" />
                   </div>
                   <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Chave / ID do Botão</label>
-                    <input type="text" name="catValue[]" value="<%= cat.value %>" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
+                    <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Chave / ID Interno</label>
+                    <input type="text" name="catValue[]" value="<%= cat.value %>" class="w-full bg-[#030712]/60 p-2.5 rounded-xl border border-[#1e293b]/40 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
                   </div>
                 </div>
               </div>
@@ -150,56 +158,56 @@
           </div>
         </div>
 
-        <!-- Bloco 4: Textos & Imagens do Painel -->
-        <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800/80 space-y-5">
-          <h2 class="text-lg font-bold border-b border-slate-800 pb-3 flex items-center gap-2">
-            ✍️ Conteúdo & Imagens do Painel
+        <!-- Bloco 4: Design e Imagens do Painel -->
+        <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            🎨 Design & Conteúdo do Painel
           </h2>
           <div class="space-y-4">
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Título do Painel de Suporte</label>
-              <input type="text" id="titleInput" name="title" value="<%= config.panelEmbed.title %>" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" required />
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Título do Painel de Suporte</label>
+              <input type="text" id="titleInput" name="title" value="<%= config.panelEmbed.title %>" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm text-slate-200 outline-none" required />
             </div>
             
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Descrição / Mensagem</label>
-              <textarea id="descInput" name="description" rows="4" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none resize-none" required><%= config.panelEmbed.description %></textarea>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Descrição / Mensagem</label>
+              <textarea id="descInput" name="description" rows="4" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm text-slate-200 outline-none resize-none" required><%= config.panelEmbed.description %></textarea>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">URL da Miniatura (Thumbnail)</label>
-                <input type="url" id="thumbnailInput" name="thumbnail" value="<%= config.panelEmbed.thumbnail || '' %>" placeholder="Ex: https://dominio.com/logo.png" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+                <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">URL da Miniatura (Thumbnail)</label>
+                <input type="url" id="thumbnailInput" name="thumbnail" value="<%= config.panelEmbed.thumbnail || '' %>" placeholder="Ex: https://dominio.com/logo.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
               </div>
 
               <div>
-                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">URL do Banner / Imagem Principal</label>
-                <input type="url" id="imageInput" name="image" value="<%= config.panelEmbed.image || '' %>" placeholder="Ex: https://dominio.com/banner.png" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+                <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">URL do Banner / Imagem Principal</label>
+                <input type="url" id="imageInput" name="image" value="<%= config.panelEmbed.image || '' %>" placeholder="Ex: https://dominio.com/banner.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
               </div>
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cor da Borda Lateral</label>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Cor da Borda Lateral</label>
               <div class="flex items-center gap-3">
                 <input type="color" id="colorInput" name="color" value="<%= config.panelEmbed.color %>" class="w-14 h-11 bg-transparent cursor-pointer rounded-lg border-none" />
-                <span class="text-xs text-slate-400">Escolha uma cor de realce da janela de suporte</span>
+                <span class="text-xs text-[#64748b]">Selecione uma cor de realce da janela de suporte</span>
               </div>
             </div>
           </div>
         </div>
 
-        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-sm shadow-lg shadow-violet-600/20">
-          Salvar Todas as Configurações
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-xs shadow-lg shadow-violet-600/20 tracking-wider uppercase">
+          Salvar Todas as Configurações e Atualizar Discord
         </button>
       </div>
 
       <!-- Coluna de Prévia Visual -->
       <div class="lg:col-span-5">
         <div class="sticky top-8 space-y-4">
-          <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Simulação do Painel no Discord</span>
+          <span class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider">Simulação do Painel no Discord</span>
           
           <!-- Mockup Discord Message -->
-          <div class="bg-[#313338] p-4 rounded-xl shadow-xl border border-black/20 flex gap-4 text-sm font-sans">
+          <div class="bg-[#313338] p-4 rounded-xl shadow-xl border border-[#1e293b]/40 flex gap-4 text-sm font-sans">
             <div class="w-10 h-10 rounded-full bg-violet-600 flex-shrink-0 flex items-center justify-center font-bold text-white text-base">
               K
             </div>
@@ -284,28 +292,35 @@
       const container = document.getElementById('categories-container');
       const randomId = Math.random().toString(36).substring(7);
       const newRow = document.createElement('div');
-      newRow.className = "category-row bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 relative space-y-3";
+      newRow.className = "category-row bg-[#030712]/50 p-5 rounded-2xl border border-[#1e293b]/50 relative space-y-3 shadow-inner";
       newRow.id = 'cat-row-' + catCounter;
       newRow.innerHTML = `
-        <button type="button" onclick="removeCategoryRow(${catCounter})" class="absolute top-2 right-3 text-red-500 hover:text-red-400 text-xs font-bold transition">Remover</button>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <button type="button" onclick="removeCategoryRow(${catCounter})" class="absolute top-3 right-4 text-red-400 hover:text-red-300 text-xs font-bold transition">Excluir</button>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div class="md:col-span-2">
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome da Categoria</label>
-            <input type="text" name="catLabel[]" placeholder="Ex: Suporte Geral" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" required />
+            <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Nome da Categoria</label>
+            <input type="text" name="catLabel[]" placeholder="Ex: Suporte Geral" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500" required />
           </div>
           <div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Emoji</label>
-            <input type="text" name="catEmoji[]" placeholder="💬" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none text-center" required />
+            <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Emoji</label>
+            <input type="text" name="catEmoji[]" placeholder="💬" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none text-center focus:border-violet-500" required />
+          </div>
+          <div>
+            <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Exibição</label>
+            <select name="catStatus[]" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500">
+              <option value="show" selected>🟢 Exibir</option>
+              <option value="hide">🔴 Ocultar</option>
+            </select>
           </div>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição</label>
-            <input type="text" name="catDesc[]" placeholder="Fale com a nossa staff" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-200 outline-none" />
+            <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Descrição</label>
+            <input type="text" name="catDesc[]" placeholder="Fale com a nossa staff" class="w-full bg-[#030712] p-2.5 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none focus:border-violet-500" />
           </div>
           <div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Chave / ID do Botão</label>
-            <input type="text" name="catValue[]" value="categoria_${randomId}" class="w-full bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
+            <label class="block text-[9px] font-black text-[#64748b] uppercase tracking-wider mb-1">Chave / ID do Botão</label>
+            <input type="text" name="catValue[]" value="categoria_${randomId}" class="w-full bg-[#030712]/60 p-2.5 rounded-xl border border-[#1e293b]/40 text-xs text-slate-500 outline-none cursor-not-allowed" readonly />
           </div>
         </div>
       `;
