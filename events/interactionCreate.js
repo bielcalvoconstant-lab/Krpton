@@ -65,14 +65,12 @@ module.exports = {
         const categoryValue = interaction.values[0];
         const categoryObj = config.categories.find(c => c.value === categoryValue);
 
-        // CORREÇÃO: Incrementa o contador de tickets sequenciais do servidor
+        // Incrementa o contador sequencial de tickets
         config.ticketCount = (config.ticketCount || 0) + 1;
         await config.save();
 
         const ticketNumber = String(config.ticketCount).padStart(4, '0');
-        const isDenuncia = categoryValue === 'denuncia';
-        
-        // Nome formatado como ticket-0001 ou denuncia-0001
+        const isDenuncia = categoryValue === 'denuncia' || categoryValue.includes('denuncia');
         const ticketName = isDenuncia ? `denuncia-${ticketNumber}` : `ticket-${ticketNumber}`;
 
         const overwrites = [
@@ -103,11 +101,10 @@ module.exports = {
 
         const ticketEmbed = new EmbedBuilder()
           .setTitle(`Ticket: ${categoryObj ? categoryObj.label : 'Suporte'}`)
-          .setDescription(`Olá, ${user}. Seu ticket foi criado. Descreva seu problema ou solicitação de forma simplificada enquanto a staff não chega.`)
+          .setDescription(`Olá, ${user}. Seu ticket foi criado com sucesso. Descreva seu problema enquanto a nossa equipe não chega para lhe atender.`)
           .setColor(config.panelEmbed.color || '#5865F2')
           .setTimestamp();
 
-        // Botões padrões do Ticket
         const btnClaim = new ButtonBuilder().setCustomId('ticket_claim').setLabel('Reivindicar').setStyle(ButtonStyle.Success).setEmoji('🙋‍♂️');
         const btnClose = new ButtonBuilder().setCustomId('ticket_close').setLabel('Fechar Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒');
         const btnAdd = new ButtonBuilder().setCustomId('ticket_add_member').setLabel('+ Membro').setStyle(ButtonStyle.Primary);
@@ -117,25 +114,11 @@ module.exports = {
         const rowStandard = new ActionRowBuilder().addComponents(btnClaim, btnClose, btnAdd, btnRem, btnTranscript);
         const rowsToSend = [rowStandard];
 
-        // CORREÇÃO: Se for a categoria de Denúncia, adiciona botões extras exclusivos
+        // Se for uma Denúncia, adiciona botões adicionais
         if (isDenuncia) {
-          const btnProof = new ButtonBuilder()
-            .setCustomId('denuncia_attach_proof')
-            .setLabel('Anexar Provas')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('📁');
-
-          const btnTarget = new ButtonBuilder()
-            .setCustomId('denuncia_report_target')
-            .setLabel('Identificar Acusado')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('👤');
-
-          const btnDisableOptions = new ButtonBuilder()
-            .setCustomId('denuncia_disable_options')
-            .setLabel('Desativar Opções')
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji('🛑');
+          const btnProof = new ButtonBuilder().setCustomId('denuncia_attach_proof').setLabel('Anexar Provas').setStyle(ButtonStyle.Primary).setEmoji('📁');
+          const btnTarget = new ButtonBuilder().setCustomId('denuncia_report_target').setLabel('Identificar Acusado').setStyle(ButtonStyle.Primary).setEmoji('👤');
+          const btnDisableOptions = new ButtonBuilder().setCustomId('denuncia_disable_options').setLabel('Desativar Opções').setStyle(ButtonStyle.Danger).setEmoji('🛑');
 
           const rowDenuncia = new ActionRowBuilder().addComponents(btnProof, btnTarget, btnDisableOptions);
           rowsToSend.push(rowDenuncia);
@@ -166,18 +149,55 @@ module.exports = {
       }
     }
 
+    // --- INTERAÇÕES DOS SELETORES DE CONFIGURAÇÃO (DO PAINEL ADMIN) ---
+    if (interaction.isChannelSelectMenu()) {
+      await interaction.deferReply({ ephemeral: true });
+      const config = await GuildConfig.findOne({ guildId: guild.id });
+      if (!config) return interaction.editReply({ content: 'Configurações de servidor não encontradas.' });
+
+      const selectedId = interaction.values[0];
+
+      if (interaction.customId === 'config_select_category') {
+        config.ticketCategory = selectedId;
+        await config.save();
+        return interaction.editReply({ content: `Categoria de criação de novos canais definida como: <#${selectedId}>` });
+      }
+
+      if (interaction.customId === 'config_select_logs') {
+        config.logChannelId = selectedId;
+        await config.save();
+        return interaction.editReply({ content: `Canal de logs de atividades definido como: <#${selectedId}>` });
+      }
+
+      if (interaction.customId === 'config_select_transcripts') {
+        config.transcriptChannelId = selectedId;
+        await config.save();
+        return interaction.editReply({ content: `Canal de transcripts (históricos em HTML) definido como: <#${selectedId}>` });
+      }
+    }
+
+    if (interaction.isRoleSelectMenu() && interaction.customId === 'config_select_roles') {
+      await interaction.deferReply({ ephemeral: true });
+      const config = await GuildConfig.findOne({ guildId: guild.id });
+      if (!config) return interaction.editReply({ content: 'Configurações de servidor não encontradas.' });
+
+      config.staffRoleIds = interaction.values;
+      await config.save();
+
+      const rolesMentions = interaction.values.map(id => `<@&${id}>`).join(', ');
+      return interaction.editReply({ content: `Cargos Staff atualizados com sucesso. Cargos selecionados: ${rolesMentions}` });
+    }
+
     // --- INTERAÇÕES DOS BOTÕES ---
     if (interaction.isButton()) {
       const buttonId = interaction.customId;
 
-      // Restrições de Staff para ações de Configuração
       if (buttonId.startsWith('config_') || buttonId.startsWith('discord_config_')) {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: 'Apenas administradores do servidor podem usar estas configurações.', ephemeral: true });
         }
       }
 
-      // 1. Ligar / Desligar Sistema com Atualização Dinâmica de Botões
       if (buttonId === 'config_toggle_active') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -188,7 +208,7 @@ module.exports = {
 
         await liveUpdatePanel(client, guild.id);
 
-        // Atualiza a mensagem do configurador original para mudar o botão de cor e texto dinamicamente
+        // Atualiza a embed do configurador
         const embed = new EmbedBuilder()
           .setTitle('⚙️ Central de Configuração - Krypton')
           .setDescription('Use os botões interativos abaixo para personalizar a aparência do painel de suporte, editar as categorias ou desativar o sistema.')
@@ -217,17 +237,16 @@ module.exports = {
 
         await interaction.message.edit({ embeds: [embed], components: [row1, row2] });
 
-        return interaction.editReply({ content: `O sistema de tickets foi ${config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**'} com sucesso e o painel ativo foi atualizado.` });
+        return interaction.editReply({ content: `O sistema de tickets foi ${config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**'} com sucesso.` });
       }
 
-      // 2. Modal para Editar Imagens (Banner e Miniatura)
       if (buttonId === 'discord_config_images') {
         const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
+        if (!config) return interaction.reply({ content: 'Configurações não encontradas.', ephemeral: true });
 
         const modal = new ModalBuilder()
           .setCustomId('modal_discord_images')
-          .setTitle('🖼️ Configurar Imagens do Painel');
+          .setTitle('🖼️ Configurar Imagens');
 
         const thumbInput = new TextInputBuilder()
           .setCustomId('modal_panel_thumb')
@@ -252,10 +271,9 @@ module.exports = {
         return;
       }
 
-      // 3. Modal para Editar Cor Hexadecimal da Borda
       if (buttonId === 'discord_config_color') {
         const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
+        if (!config) return interaction.reply({ content: 'Configurações não encontradas.', ephemeral: true });
 
         const modal = new ModalBuilder()
           .setCustomId('modal_discord_color')
@@ -275,7 +293,6 @@ module.exports = {
         return;
       }
 
-      // 4. Modal de Categorias
       if (buttonId === 'discord_config_categories') {
         const config = await GuildConfig.findOne({ guildId: guild.id });
         if (!config) return interaction.reply({ content: 'Configurações não encontradas.', ephemeral: true });
@@ -286,25 +303,26 @@ module.exports = {
 
         const modal = new ModalBuilder()
           .setCustomId('modal_config_categories')
-          .setTitle('🏷️ Editar Nomes das Categorias');
+          .setTitle('🏷️ Editar Categorias');
 
+        // CORREÇÃO: Encurtados para menos de 45 caracteres para evitar o erro de estouro de String no Discord
         const inputCat1 = new TextInputBuilder()
           .setCustomId('cat1_label')
-          .setLabel('Categoria 1 (Nome | Descrição | Emoji)')
+          .setLabel('Cat. 1 (Nome | Desc. | Emoji)')
           .setValue(`${cat1.label} | ${cat1.description} | ${cat1.emoji}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const inputCat2 = new TextInputBuilder()
           .setCustomId('cat2_label')
-          .setLabel('Categoria 2 (Nome | Descrição | Emoji)')
+          .setLabel('Cat. 2 (Nome | Desc. | Emoji)')
           .setValue(`${cat2.label} | ${cat2.description} | ${cat2.emoji}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const inputCat3 = new TextInputBuilder()
           .setCustomId('cat3_label')
-          .setLabel('Categoria 3 (Nome | Descrição | Emoji) [Denúncia]')
+          .setLabel('Cat. 3 (Nome | Desc. | Emoji) [Denúncia]')
           .setValue(`${cat3.label} | ${cat3.description} | ${cat3.emoji}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
@@ -319,10 +337,9 @@ module.exports = {
         return;
       }
 
-      // 5. Modal de Design Textual
       if (buttonId === 'discord_config_panel') {
         const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
+        if (!config) return interaction.reply({ content: 'Configurações não encontradas.', ephemeral: true });
 
         const modal = new ModalBuilder()
           .setCustomId('modal_discord_config')
@@ -351,7 +368,6 @@ module.exports = {
         return;
       }
 
-      // 6. Enviar painel de tickets público
       if (buttonId === 'config_send_public_panel') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -387,55 +403,33 @@ module.exports = {
         config.panelMessageId = publicMessage.id;
         await config.save();
 
-        return interaction.editReply({ content: 'Painel de tickets gerado com sucesso neste canal. Ele será editado em tempo real em qualquer alteração futuro!' });
+        return interaction.editReply({ content: 'Painel de tickets gerado com sucesso neste canal. Ele será editado em tempo real em qualquer alteração futura!' });
       }
 
-      // --- TRATAMENTO DOS BOTÕES DE DENÚNCIA EXTRAS (DENTRO DO CANAL DO TICKET) ---
+      // --- TRATAMENTO DOS BOTÕES DE DENÚNCIA EXTRAS ---
       if (buttonId === 'denuncia_attach_proof') {
-        const modal = new ModalBuilder()
-          .setCustomId('modal_denuncia_proof')
-          .setTitle('📁 Anexar Prova de Denúncia');
-
-        const proofInput = new TextInputBuilder()
-          .setCustomId('denuncia_proof_link')
-          .setLabel('Link ou Descrição da Prova')
-          .setPlaceholder('Exemplo: https://imgur.com/link-da-imagem ou Link do vídeo do abuso')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true);
-
+        const modal = new ModalBuilder().setCustomId('modal_denuncia_proof').setTitle('📁 Anexar Prova');
+        const proofInput = new TextInputBuilder().setCustomId('denuncia_proof_link').setLabel('Link ou Descrição da Prova').setStyle(TextInputStyle.Paragraph).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(proofInput));
         await interaction.showModal(modal);
         return;
       }
 
       if (buttonId === 'denuncia_report_target') {
-        const modal = new ModalBuilder()
-          .setCustomId('modal_denuncia_target')
-          .setTitle('👤 Identificar Acusado');
-
-        const targetInput = new TextInputBuilder()
-          .setCustomId('denuncia_target_id')
-          .setLabel('Nome, ID ou Tag do Acusado')
-          .setPlaceholder('Exemplo: @NomeDoUsuario ou ID: 123456789')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
+        const modal = new ModalBuilder().setCustomId('modal_denuncia_target').setTitle('👤 Identificar Acusado');
+        const targetInput = new TextInputBuilder().setCustomId('denuncia_target_id').setLabel('Nome, ID ou Tag do Acusado').setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(targetInput));
         await interaction.showModal(modal);
         return;
       }
 
       if (buttonId === 'denuncia_disable_options') {
-        // Desativa a segunda fileira de botões (as opções da denúncia), deixando apenas os botões padrões ativos
         await interaction.deferReply({ ephemeral: true });
         const channel = interaction.channel;
-        
-        // Pega as mensagens do canal e edita a mensagem inicial que possui os botões extras
         const messages = await channel.messages.fetch({ limit: 50 });
         const originalMsg = messages.find(m => m.author.id === client.user.id && m.components.length > 1);
 
         if (originalMsg) {
-          // Edita para remover a segunda fileira de componentes
           await originalMsg.edit({ components: [originalMsg.components[0]] });
           return interaction.editReply({ content: 'As opções adicionais de denúncia foram desativadas e congeladas com sucesso.' });
         } else {
@@ -550,8 +544,6 @@ module.exports = {
 
     // --- RECEBIMENTO DOS FORMULÁRIOS DE MODAIS (DISCORD) ---
     if (interaction.isModalSubmit()) {
-      
-      // 1. Modal de Imagens (Banner/Miniatura) do Painel
       if (interaction.customId === 'modal_discord_images') {
         await interaction.deferReply({ ephemeral: true });
         const thumbnail = interaction.fields.getTextInputValue('modal_panel_thumb');
@@ -570,7 +562,6 @@ module.exports = {
         }
       }
 
-      // 2. Modal de Cor Hexadecimal
       if (interaction.customId === 'modal_discord_color') {
         await interaction.deferReply({ ephemeral: true });
         let color = interaction.fields.getTextInputValue('modal_panel_color').trim();
@@ -592,7 +583,6 @@ module.exports = {
         }
       }
 
-      // 3. Modal de Texto (Título e Descrição)
       if (interaction.customId === 'modal_discord_config') {
         await interaction.deferReply({ ephemeral: true });
         const title = interaction.fields.getTextInputValue('modal_panel_title');
@@ -611,7 +601,6 @@ module.exports = {
         }
       }
 
-      // 4. Modal de Categorias
       if (interaction.customId === 'modal_config_categories') {
         await interaction.deferReply({ ephemeral: true });
         const text1 = interaction.fields.getTextInputValue('cat1_label').split('|');
@@ -634,29 +623,17 @@ module.exports = {
         }
       }
 
-      // 5. Modal de Provas (Denúncia)
       if (interaction.customId === 'modal_denuncia_proof') {
         const link = interaction.fields.getTextInputValue('denuncia_proof_link');
-        const proofEmbed = new EmbedBuilder()
-          .setTitle('📁 Prova de Denúncia Anexada')
-          .setDescription(link)
-          .setColor('#E74C3C')
-          .setTimestamp();
-        
-        await interaction.reply({ content: 'Registrando prova no canal...', ephemeral: true });
+        const proofEmbed = new EmbedBuilder().setTitle('📁 Prova Anexada').setDescription(link).setColor('#E74C3C').setTimestamp();
+        await interaction.reply({ content: 'Anexando provas...', ephemeral: true });
         return interaction.channel.send({ embeds: [proofEmbed] });
       }
 
-      // 6. Modal de Identificar Acusado
       if (interaction.customId === 'modal_denuncia_target') {
         const target = interaction.fields.getTextInputValue('denuncia_target_id');
-        const targetEmbed = new EmbedBuilder()
-          .setTitle('👤 Acusado Identificado')
-          .setDescription(`O denunciante informou que o acusado é: **${target}**`)
-          .setColor('#E74C3C')
-          .setTimestamp();
-        
-        await interaction.reply({ content: 'Registrando acusado no canal...', ephemeral: true });
+        const targetEmbed = new EmbedBuilder().setTitle('👤 Acusado Identificado').setDescription(`Acusado informado: **${target}**`).setColor('#E74C3C').setTimestamp();
+        await interaction.reply({ content: 'Identificando acusado...', ephemeral: true });
         return interaction.channel.send({ embeds: [targetEmbed] });
       }
 
