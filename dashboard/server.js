@@ -3,9 +3,24 @@ const session = require('express-session');
 const path = require('path');
 const DiscordOAuth2 = require('discord-oauth2');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
+
+// Funções Auxiliares de Criptografia Segura (PBKDF2 nativo do Node.js)
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedPassword) {
+  if (!storedPassword || !storedPassword.includes(':')) return false;
+  const [salt, originalHash] = storedPassword.split(':');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return hash === originalHash;
+}
 
 module.exports = (client) => {
   const app = express();
@@ -19,9 +34,10 @@ module.exports = (client) => {
   });
 
   const transporter = nodemailer.createTransport({
+    service: process.env.SMTP_HOST && process.env.SMTP_HOST.includes('gmail') ? 'gmail' : undefined,
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false, 
+    secure: process.env.SMTP_PORT === '465',
     auth: {
       user: process.env.SMTP_USER || '', 
       pass: process.env.SMTP_PASS || ''  
@@ -43,25 +59,28 @@ module.exports = (client) => {
     }
   }));
 
+  // Middlewares de Validação de Acesso
   function checkAuth(req, res, next) {
     if (req.session && req.session.user) {
       return next();
     }
-    res.redirect('/');
+    res.redirect('/login');
   }
 
   async function checkVerifiedEmail(req, res, next) {
-    if (!req.session.user) return res.redirect('/');
+    if (!req.session.user) return res.redirect('/login');
     
-    const dbUser = await User.findOne({ discordId: req.session.user.id });
+    const dbUser = await User.findOne({ email: req.session.user.email });
     if (dbUser && dbUser.isVerified) {
-      req.session.isVerifiedEmail = true;
       req.session.userRole = dbUser.role;
       return next();
     }
-    res.redirect('/verify-email');
+    res.redirect('/verify-otp?email=' + encodeURIComponent(req.session.user.email));
   }
 
+  // --- ROTAS DO SISTEMA DE LOGIN LOCAL (E-MAIL + SENHA) ---
+
+  // Página Inicial Informativa
   app.get('/', (req, res) => {
     res.render('index', { 
       user: req.session.user || null, 
@@ -69,32 +88,144 @@ module.exports = (client) => {
     });
   });
 
-  app.get('/verify-email', checkAuth, async (req, res) => {
-    const dbUser = await User.findOne({ discordId: req.session.user.id });
-    if (dbUser && dbUser.isVerified) return res.redirect('/dashboard');
-    res.render('verify-email', { user: req.session.user, error: req.query.error || null });
+  // Tela de Login
+  app.get('/login', (req, res) => {
+    if (req.session.user) return res.redirect('/dashboard');
+    res.render('verify-email', { user: null, error: req.query.error || null, mode: 'login' });
   });
 
-  app.post('/verify-email', checkAuth, async (req, res) => {
+  // POST Login
+  app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.redirect('/login?error=Preencha todos os campos.');
+
+    try {
+      const dbUser = await User.findOne({ email: email.toLowerCase() });
+      if (!dbUser || !verifyPassword(password, dbUser.password)) {
+        return res.redirect('/login?error=Credenciais inválidas.');
+      }
+
+      // Gera código 2FA descartável (OTP)
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      dbUser.otp = otpCode;
+      dbUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+      dbUser.isVerified = false;
+      await dbUser.save();
+
+      // Envia OTP
+      sendSecurityEmail(email, otpCode);
+
+      req.session.user = { email: dbUser.email, id: dbUser.discordId };
+      req.session.save(() => {
+        res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
+      });
+    } catch (err) {
+      res.redirect('/login?error=Erro interno.');
+    }
+  });
+
+  // Tela de Cadastro
+  app.get('/register', (req, res) => {
+    res.render('verify-email', { user: null, error: req.query.error || null, mode: 'register' });
+  });
+
+  // POST Cadastro
+  app.post('/register', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.redirect('/register?error=Preencha todos os campos.');
+
+    try {
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser) return res.redirect('/register?error=E-mail já cadastrado.');
+
+      const role = email.toLowerCase() === 'mafiosodashopping@gmail.com' ? 'superadmin' : 'user';
+      const encryptedPassword = hashPassword(password);
+
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+      await User.create({
+        email: email.toLowerCase(),
+        password: encryptedPassword,
+        otp: otpCode,
+        otpExpires,
+        role
+      });
+
+      sendSecurityEmail(email, otpCode);
+
+      req.session.user = { email: email.toLowerCase() };
+      req.session.save(() => {
+        res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
+      });
+    } catch (err) {
+      res.redirect('/register?error=Erro ao criar conta.');
+    }
+  });
+
+  // --- RECUPERAÇÃO DE SENHA ("ESQUECI A SENHA") ---
+
+  app.get('/forgot-password', (req, res) => {
+    res.render('verify-email', { user: null, error: req.query.error || null, mode: 'forgot' });
+  });
+
+  app.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.redirect('/verify-email?error=E-mail inválido');
+    const dbUser = await User.findOne({ email: email.toLowerCase() });
+
+    if (!dbUser) return res.redirect('/forgot-password?error=E-mail não encontrado.');
+
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    dbUser.resetToken = resetCode;
+    dbUser.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    await dbUser.save();
+
+    // Envio do Código de Recuperação
+    sendSecurityEmail(email, resetCode, true);
+
+    res.redirect(`/reset-password?email=${encodeURIComponent(email)}`);
+  });
+
+  app.get('/reset-password', (req, res) => {
+    res.render('verify-email', { user: null, error: req.query.error || null, email: req.query.email || '', mode: 'reset' });
+  });
+
+  app.post('/reset-password', async (req, res) => {
+    const { email, code, newPassword } = req.body;
+    const dbUser = await User.findOne({ email: email.toLowerCase() });
+
+    if (!dbUser || dbUser.resetToken !== code || new Date() > dbUser.resetTokenExpires) {
+      return res.redirect(`/reset-password?email=${encodeURIComponent(email)}&error=Código inválido ou expirado.`);
     }
 
+    dbUser.password = hashPassword(newPassword);
+    dbUser.resetToken = null;
+    dbUser.resetTokenExpires = null;
+    await dbUser.save();
+
+    res.redirect('/login?error=Senha alterada com sucesso! Faça login.');
+  });
+
+  // Reenviar Código de Ativação / OTP
+  app.post('/verify-email', async (req, res) => {
+    const { email } = req.body;
+    const dbUser = await User.findOne({ email: email.toLowerCase() });
+    if (!dbUser) return res.redirect('/login');
+
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    dbUser.otp = otpCode;
+    dbUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await dbUser.save();
 
-    const role = email.toLowerCase() === 'mafiosodashopping@gmail.com' ? 'superadmin' : 'user';
+    sendSecurityEmail(email, otpCode);
+    res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
+  });
 
-    await User.findOneAndUpdate(
-      { discordId: req.session.user.id },
-      { email, otp: otpCode, otpExpires, isVerified: false, role },
-      { upsert: true }
-    );
-
+  // Função Global de Disparo de E-mails Seguros via Brevo API
+  async function sendSecurityEmail(email, code, isReset = false) {
     if (process.env.BREVO_API_KEY) {
       try {
-        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
           headers: {
             'api-key': process.env.BREVO_API_KEY,
@@ -107,64 +238,29 @@ module.exports = (client) => {
               email: process.env.SMTP_USER || 'krypton.noreply@gmail.com'
             },
             to: [{ email: email }],
-            subject: '🔐 Código de Segurança - Painel Krypton',
+            subject: isReset ? '🔑 Recuperação de Senha - Krypton' : '🔐 Código de Segurança - Painel Krypton',
             htmlContent: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
                             <h2 style="color: #8b5cf6;">Krypton Security</h2>
-                            <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar seu acesso no Painel Administrativo do bot.</p>
-                            <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${otpCode}</div>
-                            <p style="font-size: 11px; color: #64748b;">Esse código expira em 10 minutos. Se você não solicitou este acesso, ignore este e-mail.</p>
+                            <p style="font-size: 14px; color: #94a3b8;">Olá! Use o código abaixo para autenticar sua identidade.</p>
+                            <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align: center; margin: 30px 0; color: #a78bfa;">${code}</div>
+                            <p style="font-size: 11px; color: #64748b;">Esse código expira em instantes. Se você não solicitou este acesso, ignore este e-mail.</p>
                            </div>`
           })
         });
-
-        const resData = await response.json();
-        if (response.ok) {
-          console.log(`\n[BREVO SUCESSO] E-mail enviado com sucesso! ID: ${resData.messageId}\n`);
-        } else {
-          console.error('\n[BREVO ERRO]:', resData);
-        }
       } catch (err) {
-        console.error('\n[BREVO FALHA CONEXÃO]:', err.message);
+        console.error('[ERRO DISPARO BREVO]', err.message);
       }
     }
 
     console.log('\n=============================================');
-    console.log(`[CÓDIGO DE VERIFICAÇÃO OTP GERADO PARA ${email}]: ${otpCode}`);
+    console.log(`[CÓDIGO GERADO PARA ${email}]: ${code}`);
     console.log('=============================================\n');
+  }
 
-    res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
-  });
+  // --- ROTAS DO DISCORD OAUTH2 (VINCULAÇÃO DA CONTA) ---
 
-  app.get('/verify-otp', checkAuth, (req, res) => {
-    res.render('verify-otp', { 
-      user: req.session.user, 
-      email: req.query.email || '', 
-      error: req.query.error || null 
-    });
-  });
-
-  app.post('/verify-otp', checkAuth, async (req, res) => {
-    const { email, code } = req.body;
-    const dbUser = await User.findOne({ discordId: req.session.user.id });
-
-    if (!dbUser || dbUser.otp !== code || new Date() > dbUser.otpExpires) {
-      return res.redirect(`/verify-otp?email=${encodeURIComponent(email)}&error=Código incorreto ou expirado.`);
-    }
-
-    dbUser.isVerified = true;
-    dbUser.otp = null;
-    dbUser.otpExpires = null;
-    await dbUser.save();
-
-    req.session.isVerifiedEmail = true;
-    req.session.userRole = dbUser.role;
-
-    req.session.save(() => {
-      res.redirect('/dashboard');
-    });
-  });
-
-  app.get('/auth/login', (req, res) => {
+  app.get('/verify-email-auth', checkAuth, (req, res) => {
+    // Redireciona para vincular o bot à conta do Discord caso queira
     const url = oauth.generateAuthUrl({
       scope: ['identify', 'guilds'],
       state: 'krypton_secret_state'
@@ -186,7 +282,23 @@ module.exports = (client) => {
       const user = await oauth.getUser(tokenData.access_token);
       const guilds = await oauth.getUserGuilds(tokenData.access_token);
 
-      req.session.user = user;
+      // Vincula o Discord ID à conta de e-mail atual do banco
+      if (req.session.user) {
+        await User.findOneAndUpdate(
+          { email: req.session.user.email },
+          { discordId: user.id }
+        );
+        req.session.user.id = user.id;
+      } else {
+        // Se entrou diretamente pelo Discord, tenta achar o usuário por Discord ID
+        const dbUser = await User.findOne({ discordId: user.id });
+        if (dbUser) {
+          req.session.user = { email: dbUser.email, id: dbUser.discordId };
+        } else {
+          return res.redirect('/register?error=Crie uma conta antes de vincular seu Discord.');
+        }
+      }
+
       req.session.guilds = guilds.filter(g => g.owner || (BigInt(g.permissions) & 8n) === 8n);
       
       req.session.save(() => {
@@ -198,6 +310,42 @@ module.exports = (client) => {
     }
   });
 
+  // --- ROTAS DO DASHBOARD PRINCIPAL ---
+
+  app.get('/verify-otp', checkAuth, (req, res) => {
+    res.render('verify-otp', { 
+      user: req.session.user, 
+      email: req.query.email || '', 
+      error: req.query.error || null 
+    });
+  });
+
+  app.post('/verify-otp', checkAuth, async (req, res) => {
+    const { email, code } = req.body;
+    const dbUser = await User.findOne({ email: email.toLowerCase() });
+
+    if (!dbUser || dbUser.otp !== code || new Date() > dbUser.otpExpires) {
+      return res.redirect(`/verify-otp?email=${encodeURIComponent(email)}&error=Código incorreto ou expirado.`);
+    }
+
+    dbUser.isVerified = true;
+    dbUser.otp = null;
+    dbUser.otpExpires = null;
+    await dbUser.save();
+
+    req.session.isVerifiedEmail = true;
+    req.session.userRole = dbUser.role;
+
+    // Se ainda não vinculou Discord, força a vinculação
+    if (!dbUser.discordId) {
+      return res.redirect('/verify-email-auth');
+    }
+
+    req.session.save(() => {
+      res.redirect('/dashboard');
+    });
+  });
+
   app.get('/auth/logout', (req, res) => {
     req.session.destroy(() => {
       res.redirect('/');
@@ -205,6 +353,10 @@ module.exports = (client) => {
   });
 
   app.get('/dashboard', checkAuth, checkVerifiedEmail, (req, res) => {
+    // Se a listagem de guildas estiver vazia, convida a vincular o Discord de novo
+    if (!req.session.guilds) {
+      return res.redirect('/verify-email-auth');
+    }
     res.render('dashboard', { 
       user: req.session.user, 
       guilds: req.session.guilds,
@@ -214,8 +366,9 @@ module.exports = (client) => {
 
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
-    const userGuild = req.session.guilds.find(g => g.id === guildId);
+    if (!req.session.guilds) return res.redirect('/verify-email-auth');
     
+    const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.redirect('/dashboard');
 
     const discordGuild = client.guilds.cache.get(guildId);
@@ -268,18 +421,16 @@ module.exports = (client) => {
     res.redirect('/dashboard?presence_success=true');
   });
 
-  // Salvar configurações do Servidor - CORREGIDA para aceitar categorias dinâmicas
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.sendStatus(403);
 
-    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue } = req.body;
+    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue, catStatus } = req.body;
 
     const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
 
     try {
-      // CORREÇÃO: Criação estruturada de categorias dinâmicas enviadas do site (Adicionar/Remover)
       const updatedCategories = [];
       if (Array.isArray(catLabel)) {
         for (let i = 0; i < catLabel.length; i++) {
@@ -288,7 +439,8 @@ module.exports = (client) => {
               value: catValue[i] || `categoria_${Math.random().toString(36).substring(7)}`,
               label: catLabel[i],
               description: catDesc[i] || '',
-              emoji: catEmoji[i] || '💬'
+              emoji: catEmoji[i] || '💬',
+              active: catStatus[i] !== 'hide' // Salva como true se não estiver ocultado
             });
           }
         }
@@ -297,7 +449,8 @@ module.exports = (client) => {
           value: catValue || 'suporte',
           label: catLabel,
           description: catDesc || '',
-          emoji: catEmoji || '💬'
+          emoji: catEmoji || '💬',
+          active: catStatus !== 'hide'
         });
       }
 
@@ -319,7 +472,8 @@ module.exports = (client) => {
         { upsert: true }
       );
 
-      await liveUpdatePanel(client, guildId);
+      // Atualiza o Discord em background
+      liveUpdatePanel(client, guildId);
 
       res.redirect(`/dashboard/${guildId}?success=true`);
     } catch (dbError) {
