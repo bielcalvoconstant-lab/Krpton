@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Krypton | <%= mode === 'login' ? 'Login' : (mode === 'register' ? 'Cadastro' : 'Recuperação') %></title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0f172a] text-slate-100 min-h-screen flex items-center justify-center p-6">
+  <div class="max-w-md w-full bg-slate-900/60 p-8 rounded-2xl border border-slate-800 shadow-xl space-y-6">
+    
+    <div class="text-center">
+      <h1 class="text-2xl font-black text-violet-400">
+        <%= mode === 'login' ? 'Acessar o Painel' : (mode === 'register' ? 'Criar Nova Conta' : (mode === 'forgot' ? 'Recuperar Senha' : 'Definir Nova Senha')) %>
+      </h1>
+      <p class="text-xs text-slate-400 mt-2">
+        <%= mode === 'login' ? 'Insira seus dados para autenticar' : (mode === 'register' ? 'Preencha o formulário para se registrar' : 'Digite o seu e-mail para receber um link de recuperação') %>
+      </p>
+    </div>
+
+    <% if (error) { %>
+      <div class="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs text-center">
+        <%= error %>
+      </div>
+    <% } %>
+
+    <!-- MODO LOGIN -->
+    <% if (mode === 'login') { %>
+      <form action="/login" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Endereço de E-mail</label>
+          <input type="email" name="email" placeholder="exemplo@dominio.com" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Sua Senha</label>
+          <input type="password" name="password" placeholder="••••••••" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 rounded-xl transition text-xs">
+          Entrar e Receber 2FA
+        </button>
+      </form>
+      <div class="flex justify-between items-center text-xs text-violet-400 pt-2 border-t border-slate-800">
+        <a href="/register" class="hover:underline">Criar uma conta</a>
+        <a href="/forgot-password" class="hover:underline">Esqueci a minha senha</a>
+      </div>
+
+    <!-- MODO REGISTRO -->
+    <% } else if (mode === 'register') { %>
+      <form action="/register" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Endereço de E-mail</label>
+          <input type="email" name="email" placeholder="exemplo@dominio.com" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Crie uma Senha Forte</label>
+          <input type="password" name="password" placeholder="••••••••" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 rounded-xl transition text-xs">
+          Registrar e Receber Código
+        </button>
+      </form>
+      <div class="text-center text-xs text-violet-400 pt-2 border-t border-slate-800">
+        <a href="/login" class="hover:underline">Já tem uma conta? Faça Login</a>
+      </div>
+
+    <!-- MODO ESQUECI A SENHA -->
+    <% } else if (mode === 'forgot') { %>
+      <form action="/forgot-password" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Digite seu e-mail cadastrado</label>
+          <input type="email" name="email" placeholder="exemplo@dominio.com" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 rounded-xl transition text-xs">
+          Enviar Código de Recuperação
+        </button>
+      </form>
+      <div class="text-center text-xs text-violet-400 pt-2 border-t border-slate-800">
+        <a href="/login" class="hover:underline">Voltar para o Login</a>
+      </div>
+
+    <!-- MODO DEFINIR NOVA SENHA -->
+    <% } else if (mode === 'reset') { %>
+      <form action="/reset-password" method="POST" class="space-y-4">
+        <input type="hidden" name="email" value="<%= email %>" />
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Código de 6 dígitos recebido por e-mail</label>
+          <input type="text" name="code" placeholder="123456" maxlength="6" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-center font-bold tracking-widest outline-none transition" required />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Sua Nova Senha</label>
+          <input type="password" name="password" placeholder="••••••••" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-xs text-slate-200 outline-none transition" required />
+        </div>
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 rounded-xl transition text-xs">
+          Redefinir Senha de Acesso
+        </button>
+      </form>
+    <% } %>
+
+  </div>
+</body>
+</html>
