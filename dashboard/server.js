@@ -2,6 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const DiscordOAuth2 = require('discord-oauth2');
+const nodemailer = require('nodemailer');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
@@ -15,6 +16,16 @@ module.exports = (client) => {
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     redirectUri: `${process.env.DASHBOARD_URL}/auth/callback`
+  });
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: false, 
+    auth: {
+      user: process.env.SMTP_USER || '', 
+      pass: process.env.SMTP_PASS || ''  
+    }
   });
 
   app.set('views', path.join(__dirname, 'views'));
@@ -81,7 +92,6 @@ module.exports = (client) => {
       { upsert: true }
     );
 
-    // ENVIO USANDO A API HTTP DO BREVO (Porta 443 - Totalmente compatível com o Railway sem bloqueios e sem exigir domínio próprio)
     if (process.env.BREVO_API_KEY) {
       try {
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -94,13 +104,9 @@ module.exports = (client) => {
           body: JSON.stringify({
             sender: {
               name: 'Krypton Security',
-              email: process.env.SMTP_USER || 'krypton.noreply@gmail.com' // Seu Gmail remetente validado no Brevo
+              email: process.env.SMTP_USER || 'krypton.noreply@gmail.com'
             },
-            to: [
-              {
-                email: email
-              }
-            ],
+            to: [{ email: email }],
             subject: '🔐 Código de Segurança - Painel Krypton',
             htmlContent: `<div style="font-family: sans-serif; padding: 20px; background-color: #0f172a; color: #f8fafc; border-radius: 10px; max-width: 500px;">
                             <h2 style="color: #8b5cf6;">Krypton Security</h2>
@@ -113,18 +119,15 @@ module.exports = (client) => {
 
         const resData = await response.json();
         if (response.ok) {
-          console.log(`\n[BREVO SUCESSO] E-mail de código disparado com sucesso! ID: ${resData.messageId}\n`);
+          console.log(`\n[BREVO SUCESSO] E-mail enviado com sucesso! ID: ${resData.messageId}\n`);
         } else {
           console.error('\n[BREVO ERRO]:', resData);
         }
       } catch (err) {
         console.error('\n[BREVO FALHA CONEXÃO]:', err.message);
       }
-    } else {
-      console.warn('\n[Aviso] Variável BREVO_API_KEY não configurada no Railway. O e-mail não foi disparado.\n');
     }
 
-    // Mantém a exibição no terminal para contingência
     console.log('\n=============================================');
     console.log(`[CÓDIGO DE VERIFICAÇÃO OTP GERADO PARA ${email}]: ${otpCode}`);
     console.log('=============================================\n');
@@ -265,21 +268,38 @@ module.exports = (client) => {
     res.redirect('/dashboard?presence_success=true');
   });
 
+  // Salvar configurações do Servidor - CORREGIDA para aceitar categorias dinâmicas
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.sendStatus(403);
 
-    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, title, description, color, thumbnail, image, active, cat1Label, cat1Desc, cat1Emoji, cat2Label, cat2Desc, cat2Emoji, cat3Label, cat3Desc, cat3Emoji } = req.body;
+    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue } = req.body;
 
     const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
 
     try {
-      const updatedCategories = [
-        { value: 'suporte', label: cat1Label || 'Suporte Geral', description: cat1Desc || '', emoji: cat1Emoji || '💬' },
-        { value: 'financeiro', label: cat2Label || 'Financeiro', description: cat2Desc || '', emoji: cat2Emoji || '💳' },
-        { value: 'denuncia', label: cat3Label || 'Denúncias', description: cat3Desc || '', emoji: cat3Emoji || '⚠️' }
-      ];
+      // CORREÇÃO: Criação estruturada de categorias dinâmicas enviadas do site (Adicionar/Remover)
+      const updatedCategories = [];
+      if (Array.isArray(catLabel)) {
+        for (let i = 0; i < catLabel.length; i++) {
+          if (catLabel[i] && catLabel[i].trim() !== '') {
+            updatedCategories.push({
+              value: catValue[i] || `categoria_${Math.random().toString(36).substring(7)}`,
+              label: catLabel[i],
+              description: catDesc[i] || '',
+              emoji: catEmoji[i] || '💬'
+            });
+          }
+        }
+      } else if (catLabel && catLabel.trim() !== '') {
+        updatedCategories.push({
+          value: catValue || 'suporte',
+          label: catLabel,
+          description: catDesc || '',
+          emoji: catEmoji || '💬'
+        });
+      }
 
       await GuildConfig.findOneAndUpdate(
         { guildId },
