@@ -2,8 +2,8 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const GuildConfig = require('../models/GuildConfig');
 
 /**
- * Atualiza o painel público do Discord em tempo real com base nas configurações salvas no banco.
- * @param {Client} client Instância do cliente do bot Discord.
+ * Atualiza o painel público do Discord em tempo real filtrando categorias ativas.
+ * @param {Client} client Instância do cliente do bot.
  * @param {string} guildId ID do servidor do Discord.
  */
 async function liveUpdatePanel(client, guildId) {
@@ -16,6 +16,9 @@ async function liveUpdatePanel(client, guildId) {
     const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
     if (!message) return;
 
+    // FILTRO: Remove do painel qualquer categoria cujo "active" seja falso (Ocultado)
+    const activeCategories = config.categories.filter(cat => cat.active !== false);
+
     const embed = new EmbedBuilder()
       .setTitle(config.panelEmbed.title)
       .setDescription(config.panelEmbed.description)
@@ -27,9 +30,9 @@ async function liveUpdatePanel(client, guildId) {
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId('ticket_category_select')
       .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE')
-      .setDisabled(!config.active)
+      .setDisabled(!config.active || activeCategories.length === 0)
       .addOptions(
-        config.categories.slice(0, 25).map(cat => ({
+        activeCategories.slice(0, 25).map(cat => ({
           label: cat.label,
           description: cat.description || '',
           value: cat.value,
