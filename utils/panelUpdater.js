@@ -2,7 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const GuildConfig = require('../models/GuildConfig');
 
 /**
- * Atualiza o painel público do Discord em tempo real de forma assíncrona e segura.
+ * Sincroniza e edita a mensagem pública ativa no Discord de forma segura.
  * @param {Client} client Instância do cliente do bot.
  * @param {string} guildId ID do servidor do Discord.
  */
@@ -14,10 +14,7 @@ async function liveUpdatePanel(client, guildId) {
     const channel = await client.channels.fetch(config.panelChannelId).catch(() => null);
     if (!channel) return;
 
-    // Tenta buscar a mensagem pública de suporte
     const message = await channel.messages.fetch(config.panelMessageId).catch(() => null);
-    
-    // Se a mensagem foi deletada, limpa os IDs do banco de dados para evitar erros futuros
     if (!message) {
       config.panelChannelId = null;
       config.panelMessageId = null;
@@ -25,7 +22,6 @@ async function liveUpdatePanel(client, guildId) {
       return;
     }
 
-    // Filtra e mantém na embed apenas as categorias marcadas como ativas/exibidas
     const activeCategories = config.categories.filter(cat => cat.active !== false);
 
     const embed = new EmbedBuilder()
@@ -38,9 +34,18 @@ async function liveUpdatePanel(client, guildId) {
 
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId('ticket_category_select')
-      .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE')
-      .setDisabled(!config.active || activeCategories.length === 0)
-      .addOptions(
+      .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE');
+
+    // CORREÇÃO: Impede RangeError se todas as categorias forem ocultadas
+    if (activeCategories.length === 0) {
+      selectMenu.addOptions({
+        label: 'Nenhuma categoria ativa',
+        value: 'none_active',
+        description: 'Entre em contato com os administradores.'
+      });
+      selectMenu.setDisabled(true);
+    } else {
+      selectMenu.addOptions(
         activeCategories.slice(0, 25).map(cat => ({
           label: cat.label,
           description: cat.description || '',
@@ -48,15 +53,13 @@ async function liveUpdatePanel(client, guildId) {
           emoji: cat.emoji || undefined
         }))
       );
+      selectMenu.setDisabled(!config.active);
+    }
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
-
-    // Edita a mensagem capturando qualquer rejeição de promessa da API do Discord
-    await message.edit({ embeds: [embed], components: [row] }).catch((err) => {
-      console.warn('[AVISO LIVE UPDATE]: Falha ao editar a mensagem de suporte:', err.message);
-    });
+    await message.edit({ embeds: [embed], components: [row] }).catch(() => null);
   } catch (err) {
-    console.error('[ERRO INTERNO LIVE UPDATE]:', err.message);
+    console.error('[ERRO LIVE UPDATE]', err.message);
   }
 }
 
