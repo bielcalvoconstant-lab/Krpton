@@ -19,7 +19,7 @@
         <% } %>
         <div>
           <h1 class="text-2xl font-black tracking-tight text-white"><%= guild.name %></h1>
-          <p class="text-xs text-[#94a3b8] mt-1">Sincronize e personalize o painel de tickets</p>
+          <p class="text-xs text-[#94a3b8] mt-1">Configure todos os recursos de tickets em um único local</p>
         </div>
       </div>
       <a href="/dashboard" class="bg-[#1e293b]/80 hover:bg-[#334155]/85 text-xs text-[#cbd5e1] font-semibold py-3 px-5 rounded-xl border border-[#334155]/60 transition-all shadow-md">
@@ -27,16 +27,10 @@
       </a>
     </div>
 
-    <!-- Abas Profissionais de Navegação -->
-    <div class="flex border-b border-[#1e293b] mb-8 gap-4 text-sm">
-      <a href="/dashboard/<%= guild.id %>" class="border-b-2 border-violet-500 text-white pb-3 font-semibold px-2">🎨 Design do Painel</a>
-      <a href="/dashboard/<%= guild.id %>/admin" class="text-[#94a3b8] hover:text-white pb-3 px-2 transition-all">⚙️ Administração & Staff</a>
-    </div>
-
     <!-- Alerta de Sucesso -->
     <% if (typeof query !== 'undefined' && query.success) { %>
       <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-5 py-4 rounded-xl mb-8 text-sm shadow flex items-center gap-2">
-        <span class="text-emerald-500">✔</span> Configurações de design salvas e sincronizadas no Discord em tempo real!
+        <span class="text-emerald-500">✔</span> Configurações de suporte salvas e aplicadas no Discord em tempo real!
       </div>
     <% } %>
 
@@ -46,30 +40,92 @@
       <!-- Coluna de Configurações -->
       <div class="lg:col-span-7 space-y-6">
         
-        <!-- Bloco 1: Envio do Painel Público -->
+        <!-- Bloco 1: Estrutura de Canais -->
         <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
           <h2 class="text-base font-bold text-white flex items-center gap-2">
-            📩 Envio do Painel Público
+            📂 Estrutura & Canais do Bot
           </h2>
-          <div>
-            <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal de Envio do Painel (Público)</label>
-            <select name="panelChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none" required>
-              <option value="">Nenhum Canal Selecionado</option>
-              <% channels.filter(c => c.type === 0).forEach(ch => { %>
-                <option value="<%= ch.id %>" <%= config.panelChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
-              <% }) %>
-            </select>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Categoria de Tickets</label>
+              <select name="ticketCategory" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-xs text-slate-200 outline-none">
+                <option value="">Nenhuma Categoria</option>
+                <% channels.filter(c => c.type === 4).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.ticketCategory === ch.id ? 'selected' : '' %>><%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal do Painel de Tickets (Público)</label>
+              <select name="panelChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-xs text-slate-200 outline-none" required>
+                <option value="">Nenhum Canal Selecionado</option>
+                <% channels.filter(c => c.type === 0).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.panelChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
           </div>
-          <div>
-            <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Status do Painel</label>
-            <select name="active" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-xs text-slate-200 outline-none">
-              <option value="true" <%= config.active !== false ? 'selected' : '' %>>🟢 Ativado (Permite abertura)</option>
-              <option value="false" <%= config.active === false ? 'selected' : '' %>>🔴 Desativado (Bloqueia novos tickets)</option>
-            </select>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal de Transcripts (Históricos)</label>
+              <select name="transcriptChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-xs text-slate-200 outline-none">
+                <option value="">Sem Canal Definido</option>
+                <% channels.filter(c => c.type === 0).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.transcriptChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Canal de Log de Atividades</label>
+              <select name="logChannelId" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-xs text-slate-200 outline-none">
+                <option value="">Sem Canal Definido</option>
+                <% channels.filter(c => c.type === 0).forEach(ch => { %>
+                  <option value="<%= ch.id %>" <%= config.logChannelId === ch.id ? 'selected' : '' %>>#<%= ch.name %></option>
+                <% }) %>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Bloco 2: Categorias Dinâmicas -->
+        <!-- Bloco 2: Limitação, Ativação & Cargos Staff -->
+        <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            🛡️ Ativação & Cargos Staff
+          </h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Status Geral de Abertura</label>
+              <select name="active" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none">
+                <option value="true" <%= config.active !== false ? 'selected' : '' %>>🟢 Ativado (Permite abertura)</option>
+                <option value="false" <%= config.active === false ? 'selected' : '' %>>🔴 Desativado (Bloqueia novos tickets)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Limite de Tickets Ativos por Usuário</label>
+              <input type="number" name="maxTickets" value="<%= config.maxTickets || 3 %>" min="1" max="10" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] text-xs text-slate-200 outline-none" required />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Cargos de Atendimento Staff (Selecione vários)</label>
+            <div class="space-y-2 max-h-36 overflow-y-auto bg-[#030712] p-3 rounded-xl border border-[#1e293b]">
+              <% roles.forEach(role => { %>
+                <label class="flex items-center gap-2.5 cursor-pointer hover:bg-[#111827] p-1 rounded transition text-[11px]">
+                  <input type="checkbox" name="staffRoleIds" value="<%= role.id %>" <%= config.staffRoleIds && config.staffRoleIds.includes(role.id) ? 'checked' : '' %> class="rounded border-[#1e293b] text-violet-600 focus:ring-violet-500 bg-transparent" />
+                  <span class="text-[#cbd5e1] truncate"><%= role.name %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloco 3: Categorias Dinâmicas -->
         <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
           <div class="flex justify-between items-center border-b border-[#1e293b]/40 pb-3">
             <h2 class="text-base font-bold text-white flex items-center gap-2">
@@ -118,7 +174,7 @@
           </div>
         </div>
 
-        <!-- Bloco 3: Design e Imagens do Painel -->
+        <!-- Bloco 4: Design e Imagens do Painel -->
         <div class="bg-[#111827]/60 p-6 rounded-2xl border border-[#1e293b]/80 shadow-lg space-y-5">
           <h2 class="text-base font-bold text-white flex items-center gap-2">
             🎨 Design & Conteúdo do Painel
@@ -126,23 +182,23 @@
           <div class="space-y-4">
             <div>
               <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Título do Painel de Suporte</label>
-              <input type="text" id="titleInput" name="title" value="<%= config.panelEmbed.title %>" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm text-slate-200 outline-none" required />
+              <input type="text" id="titleInput" name="title" value="<%= config.panelEmbed.title %>" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" required />
             </div>
             
             <div>
               <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">Descrição / Mensagem</label>
-              <textarea id="descInput" name="description" rows="4" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm text-slate-200 outline-none resize-none" required><%= config.panelEmbed.description %></textarea>
+              <textarea id="descInput" name="description" rows="4" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none resize-none" required><%= config.panelEmbed.description %></textarea>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">URL da Miniatura (Thumbnail)</label>
-                <input type="url" id="thumbnailInput" name="thumbnail" value="<%= config.panelEmbed.thumbnail || '' %>" placeholder="Ex: https://dominio.com/logo.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+                <input type="url" id="thumbnailInput" name="thumbnail" value="<%= config.panelEmbed.thumbnail || '' %>" placeholder="Ex: https://dominio.com/logo.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" />
               </div>
 
               <div>
                 <label class="block text-[10px] font-black text-[#64748b] uppercase tracking-wider mb-2">URL do Banner / Imagem Principal</label>
-                <input type="url" id="imageInput" name="image" value="<%= config.panelEmbed.image || '' %>" placeholder="Ex: https://dominio.com/banner.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 transition-all text-sm text-slate-200 outline-none" />
+                <input type="url" id="imageInput" name="image" value="<%= config.panelEmbed.image || '' %>" placeholder="Ex: https://dominio.com/banner.png" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" />
               </div>
             </div>
 
@@ -157,7 +213,7 @@
         </div>
 
         <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-xs shadow-lg shadow-violet-600/20 tracking-wider uppercase">
-          Salvar Todas as Configurações de Design
+          Salvar Todas as Configurações e Atualizar Discord
         </button>
       </div>
 
