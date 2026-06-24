@@ -1,4 +1,3 @@
-const { ActivityType } = require('discord.js');
 const BotSettings = require('../models/BotSettings');
 
 module.exports = {
@@ -8,24 +7,23 @@ module.exports = {
     console.log(`[KRYPTON] Online e operando como ${client.user.tag}`);
 
     try {
-      // Busca as configurações de status persistentes do banco de dados
       let settings = await BotSettings.findOne({ key: 'global' });
       if (!settings) {
         settings = await BotSettings.create({ key: 'global' });
       }
 
-      // Aplica as atividades e status salvos
+      // Aplica o status, atividade e biografia salvas de forma unificada no cliente Discord
       client.user.setPresence({
         status: settings.status,
         activities: [{
           name: settings.activityName,
-          type: settings.activityType
+          type: settings.activityType,
+          state: settings.activityState // Aplica a Biografia/Status Personalizado do Bot
         }]
       });
-      console.log(`[KRYPTON] Atividade persistente aplicada: ${settings.activityName} (${settings.status})`);
+      console.log(`[KRYPTON] Atividade persistente aplicada: ${settings.activityName} | Bio: ${settings.activityState} (${settings.status})`);
     } catch (err) {
       console.error('[ERRO READY PRESENCE]', err.message);
-      client.user.setActivity('canais de suporte', { type: ActivityType.Watching });
     }
   }
 };
