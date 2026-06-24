@@ -2,6 +2,31 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const GuildConfig = require('../models/GuildConfig');
 
 /**
+ * Filtra e valida se o texto fornecido é um emoji válido do Discord.
+ * Se for texto puro ou inválido, retorna undefined para evitar o erro 50035.
+ */
+function parseEmoji(emojiStr) {
+  if (!emojiStr) return undefined;
+  const trimmed = emojiStr.trim();
+  if (trimmed === '') return undefined;
+
+  // Se for emoji customizado do Discord (Ex: <:krypton:123456789012345678>)
+  const customEmojiRegex = /<?a?:?\w+:(\d+)>?/;
+  const match = trimmed.match(customEmojiRegex);
+  if (match) {
+    return { id: match[1] };
+  }
+
+  // Se for apenas letras/números (texto puro), não é um emoji unicode válido
+  const textRegex = /^[a-zA-Z0-9\s-_]+$/;
+  if (textRegex.test(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed; // Retorna o emoji unicode diretamente (Ex: ⚠️)
+}
+
+/**
  * Sincroniza e edita a mensagem pública ativa no Discord de forma segura.
  * @param {Client} client Instância do cliente do bot.
  * @param {string} guildId ID do servidor do Discord.
@@ -36,13 +61,12 @@ async function liveUpdatePanel(client, guildId) {
       .setCustomId('ticket_category_select')
       .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE');
 
-    // CORREÇÃO: Impede RangeError se todas as categorias forem ocultadas
     if (activeCategories.length === 0) {
-      selectMenu.addOptions({
+      selectMenu.addOptions([{
         label: 'Nenhuma categoria ativa',
         value: 'none_active',
         description: 'Entre em contato com os administradores.'
-      });
+      }]);
       selectMenu.setDisabled(true);
     } else {
       selectMenu.addOptions(
@@ -50,7 +74,7 @@ async function liveUpdatePanel(client, guildId) {
           label: cat.label,
           description: cat.description || '',
           value: cat.value,
-          emoji: cat.emoji || undefined
+          emoji: parseEmoji(cat.emoji) // CORREÇÃO: Aplica a higienização do emoji
         }))
       );
       selectMenu.setDisabled(!config.active);
@@ -63,4 +87,4 @@ async function liveUpdatePanel(client, guildId) {
   }
 }
 
-module.exports = { liveUpdatePanel };
+module.exports = { liveUpdatePanel, parseEmoji };
