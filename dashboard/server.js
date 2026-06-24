@@ -33,6 +33,17 @@ module.exports = (client) => {
     redirectUri: `${process.env.DASHBOARD_URL}/auth/callback`
   });
 
+  const transporter = nodemailer.createTransport({
+    service: process.env.SMTP_HOST && process.env.SMTP_HOST.includes('gmail') ? 'gmail' : undefined,
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_PORT === '465',
+    auth: {
+      user: process.env.SMTP_USER || '', 
+      pass: process.env.SMTP_PASS || ''  
+    }
+  });
+
   app.set('views', path.join(__dirname, 'views'));
   app.set('view engine', 'ejs');
   app.use(express.urlencoded({ extended: true }));
@@ -48,7 +59,6 @@ module.exports = (client) => {
     }
   }));
 
-  // Middlewares de verificação de autenticação
   function checkAuth(req, res, next) {
     if (req.session && req.session.user) {
       return next();
@@ -67,7 +77,7 @@ module.exports = (client) => {
     res.redirect('/verify-otp?email=' + encodeURIComponent(req.session.user.email));
   }
 
-  // --- FUNÇÃO DE ALERTA DE LOGIN POR E-MAIL (BREVO API) ---
+  // --- ALERTA DE ACESSO SEGURO ---
   async function sendLoginAlertEmail(email, ip, userAgent) {
     if (process.env.BREVO_API_KEY) {
       try {
@@ -98,14 +108,12 @@ module.exports = (client) => {
                            </div>`
           })
         });
-        console.log(`[ALERTA LOGIN] E-mail de alerta de acesso enviado com sucesso para ${email}`);
       } catch (err) {
         console.error('[ERRO ALERTA LOGIN]', err.message);
       }
     }
   }
 
-  // Função para disparo padrão de e-mails de validação de registro (OTP)
   async function sendSecurityEmail(email, code, isReset = false) {
     if (process.env.BREVO_API_KEY) {
       try {
@@ -150,13 +158,11 @@ module.exports = (client) => {
     });
   });
 
-  // Tela de Login
   app.get('/login', (req, res) => {
     if (req.session.user) return res.redirect('/dashboard');
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'login' });
   });
 
-  // CORREÇÃO: POST Login - Autentica a senha e faz login imediato, SEM pedir código OTP
   app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/login?error=Preencha todos os campos.');
@@ -167,12 +173,10 @@ module.exports = (client) => {
         return res.redirect('/login?error=E-mail ou senha incorretos.');
       }
 
-      // Login bem-sucedido: Armazena dados de sessão diretamente
       req.session.user = { email: dbUser.email, id: dbUser.discordId };
       req.session.isVerifiedEmail = true;
       req.session.userRole = dbUser.role;
 
-      // Dispara e-mail de alerta de login em tempo real
       const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
       const userAgent = req.headers['user-agent'] || 'Dispositivo desconhecido';
       sendLoginAlertEmail(dbUser.email, ip, userAgent);
@@ -189,12 +193,10 @@ module.exports = (client) => {
     }
   });
 
-  // Tela de Cadastro
   app.get('/register', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'register' });
   });
 
-  // CORREÇÃO: POST Cadastro - Envia OTP por e-mail para validar a criação de nova conta
   app.post('/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/register?error=Preencha todos os campos.');
@@ -206,7 +208,6 @@ module.exports = (client) => {
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-      // Salva os dados temporariamente na sessão para criar no banco de dados APENAS após digitar o código
       req.session.tempUser = {
         email: email.toLowerCase(),
         password: hashPassword(password),
@@ -224,7 +225,6 @@ module.exports = (client) => {
     }
   });
 
-  // POST de Verificação do OTP de Cadastro (Grava o novo usuário definitivamente no banco)
   app.post('/verify-otp', async (req, res) => {
     const { email, code } = req.body;
     const temp = req.session.tempUser;
@@ -236,7 +236,6 @@ module.exports = (client) => {
     try {
       const role = temp.email === 'mafiosodashopping@gmail.com' ? 'superadmin' : 'user';
 
-      // Cria a conta do usuário no banco agora que o e-mail foi validado
       const dbUser = await User.create({
         email: temp.email,
         password: temp.password,
@@ -244,13 +243,12 @@ module.exports = (client) => {
         role
       });
 
-      req.session.tempUser = null; // Limpa cache temporário
+      req.session.tempUser = null;
 
       req.session.user = { email: dbUser.email, id: dbUser.discordId };
       req.session.isVerifiedEmail = true;
       req.session.userRole = dbUser.role;
 
-      // Dispara alerta de boas-vindas/login
       const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
       const userAgent = req.headers['user-agent'] || 'Dispositivo desconhecido';
       sendLoginAlertEmail(dbUser.email, ip, userAgent);
@@ -266,8 +264,6 @@ module.exports = (client) => {
       res.redirect('/register?error=Erro ao criar usuário no banco.');
     }
   });
-
-  // --- RECUPERAÇÃO DE SENHA ---
 
   app.get('/forgot-password', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'forgot' });
@@ -309,7 +305,21 @@ module.exports = (client) => {
     res.redirect('/login?error=Senha alterada com sucesso! Faça login.');
   });
 
-  // --- DISCORD OAUTH2 (LOGIN DIRETO / VINCULAÇÃO) ---
+  app.post('/verify-email', async (req, res) => {
+    const { email } = req.body;
+    const dbUser = await User.findOne({ email: email.toLowerCase() });
+    if (!dbUser) return res.redirect('/login');
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    dbUser.otp = otpCode;
+    dbUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await dbUser.save();
+
+    sendSecurityEmail(email, otpCode);
+    res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
+  });
+
+  // --- DISCORD OAUTH2 ---
 
   app.get('/auth/login', (req, res) => {
     const url = oauth.generateAuthUrl({
@@ -348,7 +358,6 @@ module.exports = (client) => {
           dbUser = await User.findOne({ email: discordUser.email.toLowerCase() });
         }
 
-        // Se a conta não existe, cria ela e loga na hora (Sem pedir OTP)
         if (!dbUser) {
           const randomPassword = crypto.randomBytes(16).toString('hex');
           const encryptedPassword = hashPassword(randomPassword);
@@ -372,7 +381,6 @@ module.exports = (client) => {
       req.session.guilds = guilds.filter(g => g.owner || (BigInt(g.permissions) & 8n) === 8n);
       req.session.userRole = dbUser.role;
 
-      // Dispara e-mail de alerta de login em tempo real
       const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
       const userAgent = req.headers['user-agent'] || 'Dispositivo desconhecido';
       sendLoginAlertEmail(dbUser.email, ip, userAgent);
@@ -400,15 +408,7 @@ module.exports = (client) => {
     });
   });
 
-  // --- ROTAS DO PAINEL PRINCIPAL ---
-
-  app.get('/verify-otp', checkAuth, (req, res) => {
-    res.render('verify-otp', { 
-      user: req.session.user, 
-      email: req.query.email || '', 
-      error: req.query.error || null 
-    });
-  });
+  // --- ROTAS DO DASHBOARD ---
 
   app.get('/dashboard', checkAuth, checkVerifiedEmail, (req, res) => {
     if (!req.session.guilds) {
@@ -421,6 +421,7 @@ module.exports = (client) => {
     });
   });
 
+  // 1. PÁGINA DE DESIGN DO PAINEL PÚBLICO (ABAS/SITE)
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     if (!req.session.guilds) return res.redirect('/verify-email-auth');
@@ -435,9 +436,7 @@ module.exports = (client) => {
 
     try {
       let config = await GuildConfig.findOne({ guildId });
-      if (!config) {
-        config = await GuildConfig.create({ guildId });
-      }
+      if (!config) config = await GuildConfig.create({ guildId });
 
       const channels = discordGuild.channels.cache
         .filter(c => c.type === 0 || c.type === 4)
@@ -455,37 +454,17 @@ module.exports = (client) => {
         query: req.query
       });
     } catch (dbError) {
-      console.error('[ERRO BANCO NO DASHBOARD]', dbError);
       res.status(500).send('Erro de comunicação com o banco de dados.');
     }
   });
 
-  app.post('/developer/presence', checkAuth, checkVerifiedEmail, (req, res) => {
-    if (req.session.userRole !== 'superadmin') {
-      return res.status(403).send('Acesso não autorizado.');
-    }
-
-    const { activityName, activityType, status } = req.body;
-
-    client.user.setPresence({
-      status: status || 'online',
-      activities: [{
-        name: activityName || 'canais de suporte',
-        type: parseInt(activityType || '3')
-      }]
-    });
-
-    res.redirect('/dashboard?presence_success=true');
-  });
-
+  // Salvar alterações de Design (Página 1)
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.sendStatus(403);
 
-    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue, catStatus } = req.body;
-
-    const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
+    const { panelChannelId, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue, catStatus } = req.body;
 
     try {
       const updatedCategories = [];
@@ -514,10 +493,7 @@ module.exports = (client) => {
       await GuildConfig.findOneAndUpdate(
         { guildId },
         {
-          staffRoleIds: rolesArray,
-          logChannelId,
-          transcriptChannelId,
-          ticketCategory,
+          panelChannelId,
           active: active === 'true',
           'panelEmbed.title': title,
           'panelEmbed.description': description,
@@ -533,9 +509,91 @@ module.exports = (client) => {
 
       res.redirect(`/dashboard/${guildId}?success=true`);
     } catch (dbError) {
-      console.error('[ERRO AO SALVAR CONFIGS]', dbError);
       res.status(500).send('Erro ao salvar as configurações.');
     }
+  });
+
+  // NOVO: 2. PÁGINA EXCLUSIVA DE COMANDOS E CONFIGURAÇÃO DA STAFF (/admin)
+  app.get('/dashboard/:guildId/admin', checkAuth, checkVerifiedEmail, async (req, res) => {
+    const { guildId } = req.params;
+    if (!req.session.guilds) return res.redirect('/verify-email-auth');
+
+    const userGuild = req.session.guilds.find(g => g.id === guildId);
+    if (!userGuild) return res.redirect('/dashboard');
+
+    const discordGuild = client.guilds.cache.get(guildId);
+    if (!discordGuild) {
+      return res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id=${guildId}`);
+    }
+
+    try {
+      let config = await GuildConfig.findOne({ guildId });
+      if (!config) config = await GuildConfig.create({ guildId });
+
+      const channels = discordGuild.channels.cache
+        .filter(c => c.type === 0 || c.type === 4)
+        .map(c => ({ id: c.id, name: c.name, type: c.type }));
+        
+      const roles = discordGuild.roles.cache.map(r => ({ id: r.id, name: r.name }));
+
+      res.render('guild-admin', { 
+        user: req.session.user, 
+        guild: userGuild, 
+        config,
+        channels,
+        roles,
+        role: req.session.userRole,
+        query: req.query
+      });
+    } catch (dbError) {
+      res.status(500).send('Erro de comunicação com o banco de dados.');
+    }
+  });
+
+  // Salvar alterações de Administração/Staff (Página 2)
+  app.post('/dashboard/:guildId/admin/save', checkAuth, checkVerifiedEmail, async (req, res) => {
+    const { guildId } = req.params;
+    const userGuild = req.session.guilds.find(g => g.id === guildId);
+    if (!userGuild) return res.sendStatus(403);
+
+    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, maxTickets } = req.body;
+    const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
+
+    try {
+      await GuildConfig.findOneAndUpdate(
+        { guildId },
+        {
+          staffRoleIds: rolesArray,
+          logChannelId,
+          transcriptChannelId,
+          ticketCategory,
+          maxTickets: parseInt(maxTickets || '3')
+        },
+        { upsert: true }
+      );
+
+      res.redirect(`/dashboard/${guildId}/admin?success=true`);
+    } catch (dbError) {
+      res.status(500).send('Erro ao salvar as configurações.');
+    }
+  });
+
+  app.post('/developer/presence', checkAuth, checkVerifiedEmail, (req, res) => {
+    if (req.session.userRole !== 'superadmin') {
+      return res.status(403).send('Acesso não autorizado.');
+    }
+
+    const { activityName, activityType, status } = req.body;
+
+    client.user.setPresence({
+      status: status || 'online',
+      activities: [{
+        name: activityName || 'canais de suporte',
+        type: parseInt(activityType || '3')
+      }]
+    });
+
+    res.redirect('/dashboard?presence_success=true');
   });
 
   const PORT = process.env.PORT || 3000;
