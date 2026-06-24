@@ -72,9 +72,11 @@ module.exports = {
         const isDenuncia = categoryValue === 'denuncia' || categoryValue.includes('denuncia');
         const ticketName = isDenuncia ? `denuncia-${ticketNumber}` : `ticket-${ticketNumber}`;
 
+        // CORREÇÃO: Adicionada autoliberação explícita para o ID do próprio bot (client.user.id) para que ele nunca se auto-bloqueie de enviar provas ou fechar canais
         const overwrites = [
           { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] }
+          { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] },
+          { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] }
         ];
 
         if (config.staffRoleIds && config.staffRoleIds.length > 0) {
@@ -352,7 +354,6 @@ module.exports = {
 
         const targetChannelId = config.panelChannelId;
 
-        // VALIDAÇÃO: Se o ID do canal estiver nulo ou ausente, interrompe antes de tentar puxar no Discord e travar
         if (!targetChannelId || targetChannelId.trim() === '') {
           return interaction.editReply({ content: 'Por favor, selecione um canal de destino válido no primeiro menu deslizante antes de tentar gerar o painel.' });
         }
@@ -378,11 +379,11 @@ module.exports = {
           .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE');
 
         if (activeCategories.length === 0) {
-          selectMenu.addOptions({
+          selectMenu.addOptions([{
             label: 'Nenhuma categoria ativa',
             value: 'none_active',
             description: 'Entre em contato com os administradores.'
-          });
+          }]);
           selectMenu.setDisabled(true);
         } else {
           selectMenu.addOptions(
@@ -400,17 +401,21 @@ module.exports = {
         
         // Exclui painel anterior se existente
         if (config.panelChannelId && config.panelMessageId) {
-          const oldChannel = guild.channels.cache.get(config.panelChannelId);
+          const oldChannel = guild.channels.cache.get(config.panelChannelId) || await guild.channels.fetch(config.panelChannelId).catch(() => null);
           if (oldChannel) {
             const oldMsg = await oldChannel.messages.fetch(config.panelMessageId).catch(() => null);
             if (oldMsg) await oldMsg.delete().catch(() => null);
           }
         }
 
-        const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] }).catch(() => null);
+        // CORREÇÃO: Função de envio detalhada imprimindo o erro de bloqueio da API do Discord no console do Railway para diagnóstico
+        const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] }).catch((err) => {
+          console.error('[ERRO REAL SEND DISCORD]: Falha ao tentar postar a embed de suporte no canal:', err);
+          return null;
+        });
 
         if (!publicMessage) {
-          return interaction.editReply({ content: 'Falha ao enviar a mensagem de suporte. Verifique se o bot possui a permissão de ENVIAR MENSAGENS no canal selecionado.' });
+          return interaction.editReply({ content: 'Falha ao enviar a mensagem de suporte. Verifique o terminal do Railway para ler o código de erro retornado pela API do Discord.' });
         }
 
         config.panelMessageId = publicMessage.id;
@@ -493,13 +498,32 @@ module.exports = {
         const transcriptAttachment = await createTranscript(channel, guild);
 
         if (config.transcriptChannelId) {
-          const transChannel = guild.channels.cache.get(config.transcriptChannelId);
+          const transChannel = guild.channels.cache.get(config.transcriptChannelId) || await guild.channels.fetch(config.transcriptChannelId).catch(() => null);
           if (transChannel) {
             await transChannel.send({
               content: `Histórico finalizado do Ticket de <@${ticketData.userId}> (ID do Canal: ${channel.id})`,
               files: [transcriptAttachment]
             }).catch(() => null);
           }
+        }
+
+        // CORREÇÃO: Dispara a cópia exata do histórico HTML para o privado (DM) do usuário criador do ticket
+        try {
+          const ticketOwner = await client.users.fetch(ticketData.userId).catch(() => null);
+          if (ticketOwner) {
+            const dmEmbed = new EmbedBuilder()
+              .setTitle('📜 Histórico do seu Ticket')
+              .setDescription(`Olá! Seu ticket de suporte no servidor **${guild.name}** foi encerrado de forma bem-sucedida. Segue anexo o histórico completo do seu atendimento em formato HTML para você consultar quando precisar.`)
+              .setColor('#8B5CF6')
+              .setTimestamp();
+            
+            await ticketOwner.send({
+              embeds: [dmEmbed],
+              files: [transcriptAttachment]
+            }).catch(() => null); // Silencia a falha caso o usuário possua DMs fechadas nas configurações dele
+          }
+        } catch (dmErr) {
+          console.warn('[AVISO DM TRANSCRIPT]:', dmErr.message);
         }
 
         try {
@@ -612,14 +636,14 @@ module.exports = {
         const link = interaction.fields.getTextInputValue('denuncia_proof_link');
         const proofEmbed = new EmbedBuilder().setTitle('📁 Prova Anexada').setDescription(link).setColor('#E74C3C').setTimestamp();
         await interaction.reply({ content: 'Anexando provas...', ephemeral: true });
-        return interaction.channel.send({ embeds: [proofEmbed] });
+        return interaction.channel.send({ embeds: [proofEmbed] }).catch(() => null);
       }
 
       if (interaction.customId === 'modal_denuncia_target') {
         const target = interaction.fields.getTextInputValue('denuncia_target_id');
         const targetEmbed = new EmbedBuilder().setTitle('👤 Acusado Identificado').setDescription(`Acusado informado: **${target}**`).setColor('#E74C3C').setTimestamp();
         await interaction.reply({ content: 'Identificando acusado...', ephemeral: true });
-        return interaction.channel.send({ embeds: [targetEmbed] });
+        return interaction.channel.send({ embeds: [targetEmbed] }).catch(() => null);
       }
 
       // Modais Internos do Ticket (Membros)
