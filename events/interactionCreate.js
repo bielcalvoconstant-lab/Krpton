@@ -14,7 +14,7 @@ const GuildConfig = require('../models/GuildConfig');
 const Ticket = require('../models/Ticket');
 const Blacklist = require('../models/Blacklist');
 const { createTranscript } = require('../utils/transcript');
-const { liveUpdatePanel } = require('../utils/panelUpdater');
+const { liveUpdatePanel, parseEmoji } = require('../utils/panelUpdater'); // Importado com parseEmoji
 
 module.exports = {
   name: 'interactionCreate',
@@ -72,7 +72,6 @@ module.exports = {
         const isDenuncia = categoryValue === 'denuncia' || categoryValue.includes('denuncia');
         const ticketName = isDenuncia ? `denuncia-${ticketNumber}` : `ticket-${ticketNumber}`;
 
-        // CORREÇÃO: Adicionada autoliberação explícita para o ID do próprio bot (client.user.id) para que ele nunca se auto-bloqueie de enviar provas ou fechar canais
         const overwrites = [
           { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
           { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] },
@@ -346,7 +345,7 @@ module.exports = {
         return;
       }
 
-      // CORREÇÃO CRÍTICA DO BOTÃO "GERAR PAINEL"
+      // GERAÇÃO DO PAINEL PÚBLICO
       if (buttonId === 'config_send_public_panel') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -391,7 +390,7 @@ module.exports = {
               label: cat.label,
               description: cat.description || '',
               value: cat.value,
-              emoji: cat.emoji || undefined
+              emoji: parseEmoji(cat.emoji) // CORREÇÃO: Higieniza o emoji para evitar erro 50035
             }))
           );
           selectMenu.setDisabled(!config.active);
@@ -399,7 +398,6 @@ module.exports = {
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
         
-        // Exclui painel anterior se existente
         if (config.panelChannelId && config.panelMessageId) {
           const oldChannel = guild.channels.cache.get(config.panelChannelId) || await guild.channels.fetch(config.panelChannelId).catch(() => null);
           if (oldChannel) {
@@ -408,7 +406,7 @@ module.exports = {
           }
         }
 
-        // CORREÇÃO: Função de envio detalhada imprimindo o erro de bloqueio da API do Discord no console do Railway para diagnóstico
+        // CORREÇÃO: Erro real capturado e impresso detalhadamente no terminal do Railway para análise rápida
         const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] }).catch((err) => {
           console.error('[ERRO REAL SEND DISCORD]: Falha ao tentar postar a embed de suporte no canal:', err);
           return null;
@@ -507,20 +505,20 @@ module.exports = {
           }
         }
 
-        // CORREÇÃO: Dispara a cópia exata do histórico HTML para o privado (DM) do usuário criador do ticket
+        // CORREÇÃO: Dispara a cópia do histórico HTML direto para o privado (DM) do criador do ticket
         try {
           const ticketOwner = await client.users.fetch(ticketData.userId).catch(() => null);
           if (ticketOwner) {
             const dmEmbed = new EmbedBuilder()
               .setTitle('📜 Histórico do seu Ticket')
-              .setDescription(`Olá! Seu ticket de suporte no servidor **${guild.name}** foi encerrado de forma bem-sucedida. Segue anexo o histórico completo do seu atendimento em formato HTML para você consultar quando precisar.`)
+              .setDescription(`Olá! Seu ticket de suporte no servidor **${guild.name}** foi encerrado. Segue anexo o histórico completo do seu atendimento em formato HTML para você consultar quando precisar.`)
               .setColor('#8B5CF6')
               .setTimestamp();
             
             await ticketOwner.send({
               embeds: [dmEmbed],
               files: [transcriptAttachment]
-            }).catch(() => null); // Silencia a falha caso o usuário possua DMs fechadas nas configurações dele
+            }).catch(() => null);
           }
         } catch (dmErr) {
           console.warn('[AVISO DM TRANSCRIPT]:', dmErr.message);
