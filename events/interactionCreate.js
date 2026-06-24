@@ -100,7 +100,7 @@ module.exports = {
 
         const ticketEmbed = new EmbedBuilder()
           .setTitle(`Ticket: ${categoryObj ? categoryObj.label : 'Suporte'}`)
-          .setDescription(`Olá, ${user}. Seu ticket foi criado com sucesso. Descreva seu problema enquanto a nossa equipe não chega para lhe atender.`)
+          .setDescription(`Olá, ${user}. Seu ticket foi criado com sucesso. Descreva seu problema de forma simplificada enquanto a nossa equipe não chega para lhe atender.`)
           .setColor(config.panelEmbed.color || '#5865F2')
           .setTimestamp();
 
@@ -147,7 +147,7 @@ module.exports = {
       }
     }
 
-    // --- SELETOR DE ATIVAR/DESATIVAR CATEGORIAS (FOCADO EM EXIBIR/OCULTAR) ---
+    // --- SELETOR DE ATIVAR/DESATIVAR CATEGORIAS ---
     if (interaction.isStringSelectMenu() && interaction.customId === 'config_select_toggle_category') {
       await interaction.deferReply({ ephemeral: true });
       const selectedValue = interaction.values[0];
@@ -158,11 +158,9 @@ module.exports = {
       const category = config.categories.find(cat => cat.value === selectedValue);
       if (!category) return interaction.editReply({ content: 'Categoria não localizada no banco de dados.' });
 
-      // Alterna o status de exibição
       category.active = (category.active === false) ? true : false;
       await config.save();
 
-      // Dispara a atualização em tempo real (seguro/assíncrono)
       liveUpdatePanel(client, guild.id);
 
       return interaction.editReply({ content: `A categoria **${category.label}** agora está ${category.active ? '🟢 **EXIBIDA**' : '🔴 **OCULTADA**'} no painel público de suporte.` });
@@ -193,6 +191,13 @@ module.exports = {
         await config.save();
         return interaction.editReply({ content: `Canal de transcripts (históricos de chat) definido como: <#${selectedId}>` });
       }
+
+      // NOVO: Seleção do Canal de destino para o Painel Público de Tickets
+      if (interaction.customId === 'config_select_panel_channel') {
+        config.panelChannelId = selectedId;
+        await config.save();
+        return interaction.editReply({ content: `Canal de destino onde a mensagem de suporte será enviada definido como: <#${selectedId}>` });
+      }
     }
 
     if (interaction.isRoleSelectMenu() && interaction.customId === 'config_select_roles') {
@@ -217,7 +222,7 @@ module.exports = {
         }
       }
 
-      // 1. Liga / Desliga o sistema (Assíncrono para evitar lentidão e congelamentos)
+      // 1. Liga/Desliga o sistema
       if (buttonId === 'config_toggle_active') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
@@ -226,7 +231,7 @@ module.exports = {
         config.active = !config.active;
         await config.save();
 
-        liveUpdatePanel(client, guild.id); // Chamado em background (sem await para não travar a UI)
+        liveUpdatePanel(client, guild.id);
 
         const embed = new EmbedBuilder()
           .setTitle('⚙️ Central Suprema de Configuração - Krypton')
@@ -239,6 +244,9 @@ module.exports = {
           .setColor(config.panelEmbed.color || '#5865F2')
           .setTimestamp();
 
+        const selectPanelChannel = new ChannelSelectMenuBuilder().setCustomId('config_select_panel_channel').setPlaceholder('📩 Escolha o canal de texto onde o painel público vai aparecer...').addChannelTypes(ChannelType.GuildText);
+        const selectRoles = new RoleSelectMenuBuilder().setCustomId('config_select_roles').setPlaceholder('🛡️ Escolha um ou mais cargos de atendimento (Staff)...').setMinValues(1).setMaxValues(10);
+
         const btnToggle = new ButtonBuilder()
           .setCustomId('config_toggle_active')
           .setLabel(config.active ? 'Desativar Tickets' : 'Ativar Tickets')
@@ -246,15 +254,15 @@ module.exports = {
           .setEmoji(config.active ? '🔒' : '🔓');
 
         const btnToggleCategories = new ButtonBuilder().setCustomId('config_toggle_categories_btn').setLabel('Exibir/Ocultar Botões').setStyle(ButtonStyle.Primary).setEmoji('👁️');
-        const btnDesign = new ButtonBuilder().setCustomId('discord_config_panel').setLabel('Editar Texto').setStyle(ButtonStyle.Secondary).setEmoji('✍️');
-        const btnImages = new ButtonBuilder().setCustomId('discord_config_images').setLabel('Editar Imagens').setStyle(ButtonStyle.Secondary).setEmoji('🖼️');
-        const btnColor = new ButtonBuilder().setCustomId('discord_config_color').setLabel('Editar Cor').setStyle(ButtonStyle.Secondary).setEmoji('🌈');
-        const btnSendPanel = new ButtonBuilder().setCustomId('config_send_public_panel').setLabel('Gerar Painel de Tickets').setStyle(ButtonStyle.Secondary).setEmoji('📩');
+        const btnDesign = new ButtonBuilder().setCustomId('discord_config_panel_unified').setLabel('Aparência do Painel').setStyle(ButtonStyle.Secondary).setEmoji('🎨');
+        const btnSendPanel = new ButtonBuilder().setCustomId('config_send_public_panel').setLabel('Gerar Painel de Tickets').setStyle(ButtonStyle.Success).setEmoji('📩');
 
-        const row1 = new ActionRowBuilder().addComponents(btnToggle, btnToggleCategories, btnDesign, btnImages, btnColor);
-        const row2 = new ActionRowBuilder().addComponents(btnSendPanel);
+        const row1 = new ActionRowBuilder().addComponents(selectPanelChannel);
+        const row2 = new ActionRowBuilder().addComponents(selectRoles);
+        const row3 = new ActionRowBuilder().addComponents(btnToggle, btnToggleCategories, btnDesign, btnSendPanel);
 
-        await interaction.message.edit({ embeds: [embed], components: [row1, row2] });
+        // Editamos a mensagem e desativamos o "pensando" instantaneamente
+        await interaction.message.edit({ embeds: [embed], components: [row1, row2, row3] }).catch(() => null);
 
         return interaction.editReply({ content: `O sistema de tickets foi ${config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**'} com sucesso.` });
       }
@@ -280,66 +288,14 @@ module.exports = {
         return interaction.reply({ content: 'Selecione abaixo qual botão de categoria você deseja **Exibir ou Ocultar** no painel público:', components: [row], ephemeral: true });
       }
 
-      if (buttonId === 'discord_config_images') {
+      // 3. Modal Unificado de Configuração de Design
+      if (buttonId === 'discord_config_panel_unified') {
         const config = await GuildConfig.findOne({ guildId: guild.id });
         if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
 
         const modal = new ModalBuilder()
-          .setCustomId('modal_discord_images')
-          .setTitle('🖼️ Configurar Imagens');
-
-        const thumbInput = new TextInputBuilder()
-          .setCustomId('modal_panel_thumb')
-          .setLabel('URL da Miniatura (Thumbnail)')
-          .setValue(config.panelEmbed.thumbnail || '')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        const imgInput = new TextInputBuilder()
-          .setCustomId('modal_panel_img')
-          .setLabel('URL do Banner Principal (Imagem)')
-          .setValue(config.panelEmbed.image || '')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(thumbInput),
-          new ActionRowBuilder().addComponents(imgInput)
-        );
-
-        await interaction.showModal(modal);
-        return;
-      }
-
-      if (buttonId === 'discord_config_color') {
-        const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
-
-        const modal = new ModalBuilder()
-          .setCustomId('modal_discord_color')
-          .setTitle('🌈 Configurar Cor da Embed');
-
-        const colorInput = new TextInputBuilder()
-          .setCustomId('modal_panel_color')
-          .setLabel('Cor Hexadecimal (Exemplo: #5865F2)')
-          .setValue(config.panelEmbed.color || '#5865F2')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(7)
-          .setMinLength(7);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(colorInput));
-        await interaction.showModal(modal);
-        return;
-      }
-
-      if (buttonId === 'discord_config_panel') {
-        const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config) return interaction.reply({ content: 'Configurações de servidor não encontradas.', ephemeral: true });
-
-        const modal = new ModalBuilder()
-          .setCustomId('modal_discord_config')
-          .setTitle('🎨 Editar Visual do Painel');
+          .setCustomId('modal_discord_appearance')
+          .setTitle('🎨 Editar Design do Painel');
 
         const titleInput = new TextInputBuilder()
           .setCustomId('modal_panel_title')
@@ -355,20 +311,54 @@ module.exports = {
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true);
 
+        const thumbInput = new TextInputBuilder()
+          .setCustomId('modal_panel_thumb')
+          .setLabel('URL da Miniatura (Thumbnail)')
+          .setValue(config.panelEmbed.thumbnail || '')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const imgInput = new TextInputBuilder()
+          .setCustomId('modal_panel_img')
+          .setLabel('URL do Banner Principal (Imagem)')
+          .setValue(config.panelEmbed.image || '')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const colorInput = new TextInputBuilder()
+          .setCustomId('modal_panel_color')
+          .setLabel('Cor Hexadecimal (Exemplo: #5865F2)')
+          .setValue(config.panelEmbed.color || '#5865F2')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(7)
+          .setMinLength(7);
+
         modal.addComponents(
           new ActionRowBuilder().addComponents(titleInput),
-          new ActionRowBuilder().addComponents(descInput)
+          new ActionRowBuilder().addComponents(descInput),
+          new ActionRowBuilder().addComponents(thumbInput),
+          new ActionRowBuilder().addComponents(imgInput),
+          new ActionRowBuilder().addComponents(colorInput)
         );
 
         await interaction.showModal(modal);
         return;
       }
 
+      // CORREÇÃO DEFINITIVA DO BOTÃO "GERAR PAINEL": Envia para o canal previamente selecionado em vez do canal atual
       if (buttonId === 'config_send_public_panel') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
         if (!config || !config.ticketCategory) {
           return interaction.editReply({ content: 'Configure uma categoria de tickets antes de enviar o painel público.' });
+        }
+
+        const targetChannelId = config.panelChannelId;
+        const targetChannel = guild.channels.cache.get(targetChannelId) || await guild.channels.fetch(targetChannelId).catch(() => null);
+
+        if (!targetChannel) {
+          return interaction.editReply({ content: 'Por favor, selecione um canal de destino válido no primeiro menu deslizante antes de gerar o painel.' });
         }
 
         const activeCategories = config.categories.filter(cat => cat.active !== false);
@@ -383,9 +373,17 @@ module.exports = {
 
         const selectMenu = new StringSelectMenuBuilder()
           .setCustomId('ticket_category_select')
-          .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE')
-          .setDisabled(!config.active || activeCategories.length === 0)
-          .addOptions(
+          .setPlaceholder(config.active ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE');
+
+        if (activeCategories.length === 0) {
+          selectMenu.addOptions({
+            label: 'Nenhuma categoria ativa',
+            value: 'none_active',
+            description: 'Entre em contato com os administradores.'
+          });
+          selectMenu.setDisabled(true);
+        } else {
+          selectMenu.addOptions(
             activeCategories.slice(0, 25).map(cat => ({
               label: cat.label,
               description: cat.description || '',
@@ -393,15 +391,16 @@ module.exports = {
               emoji: cat.emoji || undefined
             }))
           );
+          selectMenu.setDisabled(!config.active);
+        }
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        const publicMessage = await interaction.channel.send({ embeds: [embed], components: [row] });
+        const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] });
 
-        config.panelChannelId = interaction.channel.id;
         config.panelMessageId = publicMessage.id;
         await config.save();
 
-        return interaction.editReply({ content: 'Painel de tickets gerado com sucesso neste canal. Ele será editado em tempo real em qualquer alteração futura!' });
+        return interaction.editReply({ content: `Painel de tickets gerado com sucesso no canal <#${targetChannelId}>. Todas as alterações serão aplicadas diretamente nesta mensagem!` });
       }
 
       // --- TRATAMENTO DOS BOTÕES DE DENÚNCIA EXTRAS ---
@@ -542,26 +541,12 @@ module.exports = {
 
     // --- RECEBIMENTO DOS FORMULÁRIOS DE MODAIS (DISCORD) ---
     if (interaction.isModalSubmit()) {
-      if (interaction.customId === 'modal_discord_images') {
+      if (interaction.customId === 'modal_discord_appearance') {
         await interaction.deferReply({ ephemeral: true });
+        const title = interaction.fields.getTextInputValue('modal_panel_title');
+        const description = interaction.fields.getTextInputValue('modal_panel_desc');
         const thumbnail = interaction.fields.getTextInputValue('modal_panel_thumb');
         const image = interaction.fields.getTextInputValue('modal_panel_img');
-
-        try {
-          await GuildConfig.findOneAndUpdate(
-            { guildId: guild.id },
-            { 'panelEmbed.thumbnail': thumbnail, 'panelEmbed.image': image }
-          );
-
-          liveUpdatePanel(client, guild.id); // Background
-          return interaction.editReply({ content: 'Imagens aplicadas com sucesso! O painel ativo foi atualizado.' });
-        } catch (err) {
-          return interaction.editReply({ content: 'Erro ao gravar as imagens no banco.' });
-        }
-      }
-
-      if (interaction.customId === 'modal_discord_color') {
-        await interaction.deferReply({ ephemeral: true });
         let color = interaction.fields.getTextInputValue('modal_panel_color').trim();
 
         if (!color.startsWith('#')) color = '#' + color;
@@ -569,31 +554,41 @@ module.exports = {
         try {
           await GuildConfig.findOneAndUpdate(
             { guildId: guild.id },
-            { 'panelEmbed.color': color }
+            {
+              'panelEmbed.title': title,
+              'panelEmbed.description': description,
+              'panelEmbed.thumbnail': thumbnail,
+              'panelEmbed.image': image,
+              'panelEmbed.color': color
+            }
           );
 
-          liveUpdatePanel(client, guild.id); // Background
-          return interaction.editReply({ content: `Cor da Embed atualizada para **${color}**!` });
+          liveUpdatePanel(client, guild.id);
+          return interaction.editReply({ content: 'Aparência do painel atualizada com sucesso no Discord!' });
         } catch (err) {
-          return interaction.editReply({ content: 'Erro ao salvar a cor.' });
+          return interaction.editReply({ content: 'Erro ao gravar as configurações de aparência no banco de dados.' });
         }
       }
 
-      if (interaction.customId === 'modal_discord_config') {
+      if (interaction.customId === 'modal_config_categories') {
         await interaction.deferReply({ ephemeral: true });
-        const title = interaction.fields.getTextInputValue('modal_panel_title');
-        const description = interaction.fields.getTextInputValue('modal_panel_desc');
+        const text1 = interaction.fields.getTextInputValue('cat1_label').split('|');
+        const text2 = interaction.fields.getTextInputValue('cat2_label').split('|');
+        const text3 = interaction.fields.getTextInputValue('cat3_label').split('|');
 
         try {
-          await GuildConfig.findOneAndUpdate(
-            { guildId: guild.id },
-            { 'panelEmbed.title': title, 'panelEmbed.description': description }
-          );
+          const categories = [
+            { value: 'suporte', label: (text1[0] || 'Suporte').trim(), description: (text1[1] || '').trim(), emoji: (text1[2] || '💬').trim() },
+            { value: 'financeiro', label: (text2[0] || 'Financeiro').trim(), description: (text2[1] || '').trim(), emoji: (text2[2] || '💳').trim() },
+            { value: 'denuncia', label: (text3[0] || 'Denúncia').trim(), description: (text3[1] || '').trim(), emoji: (text3[2] || '⚠️').trim() }
+          ];
 
-          liveUpdatePanel(client, guild.id); // Background
-          return interaction.editReply({ content: 'Textos salvos com sucesso!' });
+          await GuildConfig.findOneAndUpdate({ guildId: guild.id }, { categories });
+
+          liveUpdatePanel(client, guild.id);
+          return interaction.editReply({ content: 'Nomes das categorias atualizados e sincronizados no Discord em tempo real!' });
         } catch (err) {
-          return interaction.editReply({ content: 'Falha ao salvar as configurações de texto.' });
+          return interaction.editReply({ content: 'Erro ao gravar novos nomes de categorias.' });
         }
       }
 
