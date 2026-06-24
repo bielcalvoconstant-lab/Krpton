@@ -1,1 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Krypton | Configuração do Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0b0f19] text-[#e2e8f0] min-h-screen font-sans antialiased selection:bg-violet-500/30">
 
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex justify-between items-center border-b border-[#1e293b]/60 pb-6 mb-8">
+      <div>
+        <h1 class="text-2xl font-black tracking-tight text-white flex items-center gap-2">🕹️ Central de Configurações do Bot</h1>
+        <p class="text-xs text-[#94a3b8] mt-1">Configure o status, tipo de atividade e biografia global do bot em tempo real.</p>
+      </div>
+      <a href="/dashboard" class="bg-[#1e293b]/80 hover:bg-[#334155]/85 text-xs text-[#cbd5e1] font-semibold py-3 px-5 rounded-xl border border-[#334155]/60 transition-all shadow-md">
+        &larr; Voltar ao Painel
+      </a>
+    </div>
+
+    <!-- Alert Success -->
+    <% if (typeof query !== 'undefined' && query.presence_success) { %>
+      <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-5 py-4 rounded-xl mb-8 text-sm shadow">
+        ✔ Presença, biografia e status do bot atualizados com sucesso no Discord!
+      </div>
+    <% } %>
+
+    <!-- Form de Controle Global (Apenas mafiosodashopping@gmail.com) -->
+    <div class="bg-[#111827]/60 p-8 rounded-2xl border border-[#1e293b]/80 shadow-xl space-y-6">
+      <div class="border-b border-[#1e293b]/40 pb-3 flex justify-between items-center">
+        <span class="bg-violet-500/10 text-violet-400 border border-violet-500/30 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full">Developer Master</span>
+        <span class="text-xs text-[#64748b]">ID de Acesso Autorizado</span>
+      </div>
+
+      <form action="/developer/presence" method="POST" class="space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mensagem de Atividade do Bot (Atividade/Bio)</label>
+            <input type="text" name="activityName" placeholder="Ex: canais de suporte" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" required />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de Atividade do Bot</label>
+            <select name="activityType" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none">
+              <option value="0">Jogando (Playing)</option>
+              <option value="2">Ouvindo (Listening)</option>
+              <option value="3" selected>Assistindo (Watching)</option>
+              <option value="5">Competindo (Competing)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status de Presença Global</label>
+          <select name="status" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none">
+            <option value="online">🟢 Online (Ativo)</option>
+            <option value="idle">🌙 Ausente (Idle)</option>
+            <option value="dnd">🔴 Não Perturbar (DND)</option>
+            <option value="invisible">⚫ Invisível</option>
+          </select>
+        </div>
+
+        <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-xs tracking-wider uppercase shadow-lg shadow-violet-600/20">
+          Aplicar Atividade e Atualizar Status do Bot
+        </button>
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>
