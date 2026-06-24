@@ -192,7 +192,6 @@ module.exports = {
         return interaction.editReply({ content: `Canal de transcripts (históricos de chat) definido como: <#${selectedId}>` });
       }
 
-      // NOVO: Seleção do Canal de destino para o Painel Público de Tickets
       if (interaction.customId === 'config_select_panel_channel') {
         config.panelChannelId = selectedId;
         await config.save();
@@ -231,7 +230,7 @@ module.exports = {
         config.active = !config.active;
         await config.save();
 
-        liveUpdatePanel(client, guild.id);
+        liveUpdatePanel(client, guild.id); // Atualiza em background
 
         const embed = new EmbedBuilder()
           .setTitle('⚙️ Central Suprema de Configuração - Krypton')
@@ -261,7 +260,6 @@ module.exports = {
         const row2 = new ActionRowBuilder().addComponents(selectRoles);
         const row3 = new ActionRowBuilder().addComponents(btnToggle, btnToggleCategories, btnDesign, btnSendPanel);
 
-        // Editamos a mensagem e desativamos o "pensando" instantaneamente
         await interaction.message.edit({ embeds: [embed], components: [row1, row2, row3] }).catch(() => null);
 
         return interaction.editReply({ content: `O sistema de tickets foi ${config.active ? '🟢 **ATIVADO**' : '🔴 **DESATIVADO**'} com sucesso.` });
@@ -300,14 +298,14 @@ module.exports = {
         const titleInput = new TextInputBuilder()
           .setCustomId('modal_panel_title')
           .setLabel('Título do Painel')
-          .setValue(config.panelEmbed.title)
+          .setValue(config.panelEmbed.title || '')
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const descInput = new TextInputBuilder()
           .setCustomId('modal_panel_desc')
           .setLabel('Mensagem / Descrição')
-          .setValue(config.panelEmbed.description)
+          .setValue(config.panelEmbed.description || '')
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true);
 
@@ -346,19 +344,23 @@ module.exports = {
         return;
       }
 
-      // CORREÇÃO DEFINITIVA DO BOTÃO "GERAR PAINEL": Envia para o canal previamente selecionado em vez do canal atual
+      // CORREÇÃO CRÍTICA DO BOTÃO "GERAR PAINEL"
       if (buttonId === 'config_send_public_panel') {
         await interaction.deferReply({ ephemeral: true });
         const config = await GuildConfig.findOne({ guildId: guild.id });
-        if (!config || !config.ticketCategory) {
-          return interaction.editReply({ content: 'Configure uma categoria de tickets antes de enviar o painel público.' });
-        }
+        if (!config) return interaction.editReply({ content: 'Configurações não encontradas.' });
 
         const targetChannelId = config.panelChannelId;
+
+        // VALIDAÇÃO: Se o ID do canal estiver nulo ou ausente, interrompe antes de tentar puxar no Discord e travar
+        if (!targetChannelId || targetChannelId.trim() === '') {
+          return interaction.editReply({ content: 'Por favor, selecione um canal de destino válido no primeiro menu deslizante antes de tentar gerar o painel.' });
+        }
+
         const targetChannel = guild.channels.cache.get(targetChannelId) || await guild.channels.fetch(targetChannelId).catch(() => null);
 
         if (!targetChannel) {
-          return interaction.editReply({ content: 'Por favor, selecione um canal de destino válido no primeiro menu deslizante antes de gerar o painel.' });
+          return interaction.editReply({ content: 'Não foi possível localizar o canal de destino selecionado. Verifique as permissões de leitura do bot.' });
         }
 
         const activeCategories = config.categories.filter(cat => cat.active !== false);
@@ -395,7 +397,21 @@ module.exports = {
         }
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] });
+        
+        // Exclui painel anterior se existente
+        if (config.panelChannelId && config.panelMessageId) {
+          const oldChannel = guild.channels.cache.get(config.panelChannelId);
+          if (oldChannel) {
+            const oldMsg = await oldChannel.messages.fetch(config.panelMessageId).catch(() => null);
+            if (oldMsg) await oldMsg.delete().catch(() => null);
+          }
+        }
+
+        const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] }).catch(() => null);
+
+        if (!publicMessage) {
+          return interaction.editReply({ content: 'Falha ao enviar a mensagem de suporte. Verifique se o bot possui a permissão de ENVIAR MENSAGENS no canal selecionado.' });
+        }
 
         config.panelMessageId = publicMessage.id;
         await config.save();
