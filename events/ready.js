@@ -12,16 +12,26 @@ module.exports = {
         settings = await BotSettings.create({ key: 'global' });
       }
 
-      // Aplica o status, atividade e biografia salvas de forma unificada no cliente Discord
+      // Constrói o objeto de atividade suportando o formato Custom Status com Emoji
+      const activityPayload = {
+        name: settings.activityName || 'Custom Status',
+        type: settings.activityType // 4 = Custom Status
+      };
+
+      if (settings.activityState) {
+        activityPayload.state = settings.activityState; // Texto longo (Ex: "Ganhe SONHOS...")
+      }
+
+      if (settings.activityEmoji && settings.activityEmoji.trim() !== '') {
+        activityPayload.emoji = { name: settings.activityEmoji.trim() }; // Emoji (Ex: "💎")
+      }
+
       client.user.setPresence({
         status: settings.status,
-        activities: [{
-          name: settings.activityName,
-          type: settings.activityType,
-          state: settings.activityState // Aplica a Biografia/Status Personalizado do Bot
-        }]
+        activities: [activityPayload]
       });
-      console.log(`[KRYPTON] Atividade persistente aplicada: ${settings.activityName} | Bio: ${settings.activityState} (${settings.status})`);
+
+      console.log(`[KRYPTON] Status Loritta aplicado: [${settings.activityEmoji || ''}] ${settings.activityState || ''} (${settings.status})`);
     } catch (err) {
       console.error('[ERRO READY PRESENCE]', err.message);
     }
