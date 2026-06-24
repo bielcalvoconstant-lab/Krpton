@@ -13,7 +13,7 @@
     <div class="flex justify-between items-center border-b border-[#1e293b]/60 pb-6 mb-8">
       <div>
         <h1 class="text-2xl font-black tracking-tight text-white flex items-center gap-2">🕹️ Central de Configurações do Bot</h1>
-        <p class="text-xs text-[#94a3b8] mt-1">Configure o status, tipo de atividade e biografia global do bot em tempo real.</p>
+        <p class="text-xs text-[#94a3b8] mt-1">Configure o status, tipo de atividade, bio e o emoji personalizado do bot em tempo real.</p>
       </div>
       <a href="/dashboard" class="bg-[#1e293b]/80 hover:bg-[#334155]/85 text-xs text-[#cbd5e1] font-semibold py-3 px-5 rounded-xl border border-[#334155]/60 transition-all shadow-md">
         &larr; Voltar ao Painel
@@ -23,7 +23,7 @@
     <!-- Alertas -->
     <% if (typeof query !== 'undefined' && query.presence_success) { %>
       <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-5 py-4 rounded-xl mb-8 text-sm shadow">
-        ✔ Presença, biografia e status do bot atualizados com sucesso no Discord de forma persistente!
+        ✔ Presença, biografia de status e status do bot atualizados com sucesso no Discord de forma persistente!
       </div>
     <% } %>
 
@@ -34,11 +34,10 @@
         <span class="text-xs text-[#64748b]">Acesso de Desenvolvedor Autorizado</span>
       </div>
 
-      <!-- CORREÇÃO: Form direcionado à rota unificada /dashboard/bot/admin -->
+      <!-- Form direcionado à nova rota estática prioritária para evitar erros de colisão de URL -->
       <form action="/dashboard/bot/admin" method="POST" class="space-y-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <!-- CORREÇÃO: Inputs pré-preenchidos dinamicamente com o valor atual salvo no banco de dados -->
             <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mensagem de Atividade do Bot (Atividade principal)</label>
             <input type="text" name="activityName" value="<%= settings.activityName %>" placeholder="Ex: canais de suporte" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" required />
           </div>
@@ -49,27 +48,34 @@
               <option value="0" <%= settings.activityType === 0 ? 'selected' : '' %>>Jogando (Playing)</option>
               <option value="2" <%= settings.activityType === 2 ? 'selected' : '' %>>Ouvindo (Listening)</option>
               <option value="3" <%= settings.activityType === 3 ? 'selected' : '' %>>Assistindo (Watching)</option>
+              <option value="4" <%= settings.activityType === 4 ? 'selected' : '' %>>Status Personalizado (Custom Status - Estilo Loritta)</option>
               <option value="5" <%= settings.activityType === 5 ? 'selected' : '' %>>Competindo (Competing)</option>
             </select>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <!-- NOVO: Campo de Status de Nota / Biografia Personalizada (Custom Status) -->
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Biografia de Status Personalizado (Custom Status)</label>
-            <input type="text" name="activityState" value="<%= settings.activityState %>" placeholder="Ex: Krypton | Atendimento Ativo" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" required />
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="md:col-span-2">
+            <!-- CAMPO DA BIOGRAFIA DO STATUS (Ex: Ganhe SONHOS no server...) -->
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Texto Longo do Status Personalizado (Bio/Status)</label>
+            <input type="text" name="activityState" value="<%= settings.activityState %>" placeholder="Ex: Ganhe SONHOS no server de Minecraft da Lori!" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none" required />
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status de Presença Global</label>
-            <select name="status" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none">
-              <option value="online" <%= settings.status === 'online' ? 'selected' : '' %>>🟢 Online (Ativo)</option>
-              <option value="idle" <%= settings.status === 'idle' ? 'selected' : '' %>>🌙 Ausente (Idle)</option>
-              <option value="dnd" <%= settings.status === 'dnd' ? 'selected' : '' %>>🔴 Não Perturbar (DND)</option>
-              <option value="invisible" <%= settings.status === 'invisible' ? 'selected' : '' %>>⚫ Invisível</option>
-            </select>
+            <!-- CAMPO DO EMOJI DO STATUS (Ex: 💎) -->
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Emoji do Status (Apenas 1 Emoji)</label>
+            <input type="text" name="catEmoji" value="<%= settings.activityState ? settings.activityState : '💎' %>" placeholder="Ex: 💎" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-center text-slate-200 outline-none" />
           </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status de Presença Global</label>
+          <select name="status" class="w-full bg-[#030712] p-3 rounded-xl border border-[#1e293b] focus:border-violet-500 text-sm text-slate-200 outline-none">
+            <option value="online" <%= settings.status === 'online' ? 'selected' : '' %>>🟢 Online (Ativo)</option>
+            <option value="idle" <%= settings.status === 'idle' ? 'selected' : '' %>>🌙 Ausente (Idle)</option>
+            <option value="dnd" <%= settings.status === 'dnd' ? 'selected' : '' %>>🔴 Não Perturbar (DND)</option>
+            <option value="invisible" <%= settings.status === 'invisible' ? 'selected' : '' %>>⚫ Invisível</option>
+          </select>
         </div>
 
         <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl transition-all text-xs tracking-wider uppercase shadow-lg shadow-violet-600/20">
