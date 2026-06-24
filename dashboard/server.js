@@ -5,12 +5,13 @@ const DiscordOAuth2 = require('discord-oauth2');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const Stripe = require('stripe');
+const MongoStore = require('connect-mongo');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
+const BotSettings = require('../models/BotSettings');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
-// Inicializa a API do Stripe de forma segura
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 function hashPassword(password) {
@@ -65,7 +66,6 @@ module.exports = (client) => {
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    // Ativa assinatura VIP
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const email = session.metadata.email || session.customer_details.email;
@@ -78,7 +78,6 @@ module.exports = (client) => {
       }
     }
 
-    // Cancela assinatura VIP
     if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object;
       await User.findOneAndUpdate(
@@ -91,17 +90,22 @@ module.exports = (client) => {
     res.json({ received: true });
   });
 
-  // Parsers normais do Express para as outras rotas
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
 
+  // Conexão de sessões persistentes via MongoDB (Login permanece por 30 dias)
   app.use(session({
     secret: process.env.SESSION_SECRET,
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      ttl: 30 * 24 * 60 * 60,
+      autoRemove: 'native'
+    }),
     cookie: {
       secure: false,
-      maxAge: 24 * 60 * 60 * 1000
+      maxAge: 30 * 24 * 60 * 60 * 1000
     }
   }));
 
@@ -208,7 +212,6 @@ module.exports = (client) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'login' });
   });
 
-  // POST Login Local (Acesso Instantâneo)
   app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/login?error=Preencha todos os campos.');
@@ -244,7 +247,6 @@ module.exports = (client) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'register' });
   });
 
-  // POST Cadastro Local - Envia OTP por e-mail para validar criação de conta
   app.post('/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/register?error=Preencha todos os campos.');
@@ -273,7 +275,6 @@ module.exports = (client) => {
     }
   });
 
-  // POST de Verificação do OTP de Cadastro (Cria no banco)
   app.post('/verify-otp', async (req, res) => {
     const { email, code } = req.body;
     const temp = req.session.tempUser;
@@ -487,7 +488,7 @@ module.exports = (client) => {
     });
   });
 
-  // --- ROTAS DO PAINEL PRINCIPAL (ÚNICA E CORRETA) ---
+  // --- ROTAS DO PAINEL PRINCIPAL ---
 
   app.get('/dashboard', checkAuth, checkVerifiedEmail, async (req, res) => {
     if (!req.session.guilds) {
@@ -509,7 +510,79 @@ module.exports = (client) => {
     }
   });
 
-  // Configuração individual de servidor
+  // CORREÇÃO EXCLUSIVA DE ORDEM DE ROTAS: A rota estática do bot administrador deve vir ANTES do curinga :guildId para evitar colisão no Express!
+  
+  // 1. GET - Página Exclusiva do Bot (mafiosodashopping@gmail.com)
+  app.get('/dashboard/bot/admin', checkAuth, checkVerifiedEmail, async (req, res) => {
+    if (req.session.userRole !== 'superadmin') {
+      return res.status(403).send('Acesso não autorizado. Apenas o e-mail Master possui acesso de desenvolvedor.');
+    }
+
+    try {
+      let settings = await BotSettings.findOne({ key: 'global' });
+      if (!settings) {
+        settings = await BotSettings.create({ key: 'global' });
+      }
+
+      res.render('bot-admin', { 
+        user: req.session.user, 
+        role: req.session.userRole, 
+        settings, 
+        query: req.query 
+      });
+    } catch (err) {
+      res.status(500).send('Erro interno do servidor.');
+    }
+  });
+
+  // 2. POST - Salvar configurações globais de status e biografia do Bot
+  app.post('/dashboard/bot/admin', checkAuth, checkVerifiedEmail, async (req, res) => {
+    if (req.session.userRole !== 'superadmin') {
+      return res.status(403).send('Acesso não autorizado.');
+    }
+
+    const { activityName, activityType, activityState, status, activityEmoji } = req.body;
+
+    try {
+      const settings = await BotSettings.findOneAndUpdate(
+        { key: 'global' },
+        { 
+          activityName, 
+          activityType: parseInt(activityType), 
+          activityState: activityState || '', 
+          activityEmoji: activityEmoji || '',
+          status 
+        },
+        { upsert: true, new: true }
+      );
+
+      // Atualiza o Discord em tempo real com o status personalizado estilo Loritta
+      const activityPayload = {
+        name: settings.activityName || 'Custom Status',
+        type: settings.activityType
+      };
+
+      if (settings.activityState) {
+        activityPayload.state = settings.activityState;
+      }
+
+      if (settings.activityEmoji && settings.activityEmoji.trim() !== '') {
+        activityPayload.emoji = { name: settings.activityEmoji.trim() };
+      }
+
+      client.user.setPresence({
+        status: settings.status,
+        activities: [activityPayload]
+      });
+
+      res.redirect('/dashboard/bot/admin?presence_success=true');
+    } catch (err) {
+      console.error('[ERRO PRESENCE POST]', err);
+      res.redirect('/dashboard/bot/admin?error=Erro ao gravar novos dados.');
+    }
+  });
+
+  // 3. Rota curinga individual do servidor Discord (Deve ficar abaixo das rotas estáticas!)
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     if (!req.session.guilds) return res.redirect('/verify-email-auth');
@@ -517,7 +590,7 @@ module.exports = (client) => {
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.redirect('/dashboard');
 
-    const discordGuild = client.guilds.cache.get(guildId);
+    const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
     if (!discordGuild) {
       return res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id=${guildId}`);
     }
@@ -601,15 +674,13 @@ module.exports = (client) => {
         { upsert: true, new: true }
       );
 
-      // Envia painel de tickets público no canal selecionado
-      const discordGuild = client.guilds.cache.get(guildId);
+      const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
       if (discordGuild && panelChannelId) {
-        const targetChannel = discordGuild.channels.cache.get(panelChannelId);
+        const targetChannel = discordGuild.channels.cache.get(panelChannelId) || await discordGuild.channels.fetch(panelChannelId).catch(() => null);
         
         if (targetChannel) {
-          // Deleta mensagem anterior para evitar spam
           if (config.panelChannelId && config.panelMessageId) {
-            const oldChannel = discordGuild.channels.cache.get(config.panelChannelId);
+            const oldChannel = discordGuild.channels.cache.get(config.panelChannelId) || await discordGuild.channels.fetch(config.panelChannelId).catch(() => null);
             if (oldChannel) {
               const oldMsg = await oldChannel.messages.fetch(config.panelMessageId).catch(() => null);
               if (oldMsg) await oldMsg.delete().catch(() => null);
@@ -660,14 +731,6 @@ module.exports = (client) => {
       console.error('[ERRO AO SALVAR CONFIGS]', dbError);
       res.status(500).send('Erro ao salvar as configurações.');
     }
-  });
-
-  // --- NOVA PÁGINA EXCLUSIVA DO DESENVOLVEDOR (Apenas mafiosodashopping@gmail.com) ---
-  app.get('/dashboard/bot/admin', checkAuth, checkVerifiedEmail, (req, res) => {
-    if (req.session.userRole !== 'superadmin') {
-      return res.status(403).send('Acesso não autorizado.');
-    }
-    res.render('bot-admin', { user: req.session.user, role: req.session.userRole, query: req.query });
   });
 
   const PORT = process.env.PORT || 3000;
