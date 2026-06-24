@@ -6,7 +6,7 @@
   <title>Krypton | Meus Servidores</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-[#0f172a] text-slate-100 min-h-screen font-sans">
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen font-sans">
 
   <div class="max-w-6xl mx-auto px-4 py-8">
     <!-- Header -->
@@ -28,59 +28,41 @@
         </div>
       </div>
       <div class="flex gap-3">
-        <a href="/" class="bg-slate-800 hover:bg-slate-700 text-sm font-medium py-2 px-4 rounded-xl transition-all">Página Inicial</a>
-        <a href="/auth/logout" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium py-2 px-4 rounded-xl border border-red-500/20 transition-all">Desconectar</a>
+        <% if (role === 'superadmin') { %>
+          <!-- BOTÃO EXCLUSIVO DE ACESSO À PÁGINA DE CONTROLE DO BOT -->
+          <a href="/dashboard/bot/admin" class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-4 rounded-xl border border-violet-500/20 text-xs tracking-wider uppercase transition-all shadow">
+            ⚙️ Configuração do Bot
+          </a>
+        <% } %>
+        <a href="/" class="bg-slate-800 hover:bg-slate-700 text-xs font-semibold py-2.5 px-4 rounded-xl transition-all">Página Inicial</a>
+        <a href="/auth/logout" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold py-2.5 px-4 rounded-xl border border-red-500/20 transition-all">Desconectar</a>
       </div>
     </header>
 
-    <!-- ABA EXCLUSIVA DE DESENVOLVEDOR (mafiosodashopping@gmail.com) -->
-    <% if (role === 'superadmin') { %>
-      <section class="bg-slate-900/40 border border-violet-500/20 p-6 rounded-2xl mb-10 shadow-xl space-y-6">
-        <h2 class="text-lg font-bold text-violet-400 flex items-center gap-2">🕹️ Central de Controle Global do Bot (Developer Master)</h2>
-        <p class="text-xs text-slate-400">Esta seção é exibida apenas para o e-mail de acesso pleno. Qualquer alteração aqui reflete instantaneamente nas atividades do bot no Discord.</p>
-        
-        <form action="/developer/presence" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-          <div>
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mensagem de Atividade do Bot</label>
-            <input type="text" name="activityName" placeholder="Ex: canais de suporte" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-sm text-slate-200 outline-none" required />
-          </div>
-
-          <div>
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de Atividade</label>
-            <select name="activityType" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-sm text-slate-200 outline-none">
-              <option value="0">Jogando (Playing)</option>
-              <option value="2">Ouvindo (Listening)</option>
-              <option value="3" selected>Assistindo (Watching)</option>
-              <option value="5">Competindo (Competing)</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status do Bot</label>
-            <select name="status" class="w-full bg-slate-950 p-3 rounded-xl border border-slate-800 focus:border-violet-500 text-sm text-slate-200 outline-none">
-              <option value="online">Online</option>
-              <option value="idle">Ausente (Idle)</option>
-              <option value="dnd">Não Perturbar (DND)</option>
-              <option value="invisible">Invisível</option>
-            </select>
-          </div>
-
-          <div class="md:col-span-3">
-            <button type="submit" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-3.5 rounded-xl transition text-sm shadow-lg shadow-violet-600/20">
-              Atualizar Presença e Atividade Global do Bot
-            </button>
-          </div>
-        </form>
-      </section>
+    <!-- Alerta de Assinatura -->
+    <% if (typeof query !== 'undefined' && query.checkout_success) { %>
+      <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-5 py-4 rounded-xl mb-8 text-sm shadow">
+        ⭐ Parabéns! Sua assinatura **VIP** foi ativada com sucesso pelo Stripe. Seus comandos de música no bot estão desbloqueados!
+      </div>
     <% } %>
 
     <!-- Lista de Servidores -->
     <main>
-      <h2 class="text-lg font-bold text-slate-400 uppercase tracking-wider mb-6">Seus Servidores com Administração</h2>
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-lg font-bold text-slate-400 uppercase tracking-wider">Seus Servidores com Administração</h2>
+        <% if (!isVip && role !== 'superadmin') { %>
+          <!-- BOTÃO DE ASSINATURA REAL DO STRIPE -->
+          <a href="/stripe/checkout" class="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-bold py-2 px-4 rounded-xl text-xs tracking-wider uppercase transition-all shadow-md">
+            ⭐ Assinar VIP (Músicas)
+          </a>
+        <% } else { %>
+          <span class="bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded-full">VIP Ativo</span>
+        <% } %>
+      </div>
       
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <% guilds.forEach(g => { %>
-          <div class="bg-slate-900/60 p-6 rounded-2xl flex flex-col justify-between border border-slate-800/80 shadow-lg hover:border-violet-500/40 hover:-translate-y-0.5 transition-all duration-300">
+          <div class="bg-[#111827]/60 p-6 rounded-2xl flex flex-col justify-between border border-[#1e293b]/80 shadow-lg hover:border-violet-500/40 hover:-translate-y-0.5 transition-all duration-300">
             <div class="flex items-center gap-4 mb-6">
               <% if (g.icon) { %>
                 <img src="https://cdn.discordapp.com/icons/<%= g.id %>/<%= g.icon %>.png" class="w-16 h-16 rounded-2xl" />
@@ -93,7 +75,7 @@
               </div>
             </div>
             
-            <a href="/dashboard/<%= g.id %>" class="w-full text-center bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 px-4 rounded-xl transition-all text-sm shadow-md shadow-violet-600/10">
+            <a href="/dashboard/<%= g.id %>" class="w-full text-center bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 px-4 rounded-xl transition-all text-sm shadow-md">
               Configurar Painel
             </a>
           </div>
