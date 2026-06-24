@@ -4,11 +4,15 @@ const path = require('path');
 const DiscordOAuth2 = require('discord-oauth2');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const Stripe = require('stripe');
 const GuildConfig = require('../models/GuildConfig');
 const User = require('../models/User');
 const { liveUpdatePanel } = require('../utils/panelUpdater');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
-// Funções Auxiliares de Criptografia Segura (PBKDF2 nativo do Node.js)
+// Inicializa a API do Stripe de forma segura
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
@@ -46,6 +50,48 @@ module.exports = (client) => {
 
   app.set('views', path.join(__dirname, 'views'));
   app.set('view engine', 'ejs');
+
+  // STRIPE WEBHOOK: Deve receber o body em formato RAW antes dos parsers normais do express
+  app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    if (!stripe) return res.status(500).send('Stripe não configurado no .env');
+
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+      console.error('[STRIPE WEBHOOK ERRO SIGNATURE]:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Ativa assinatura VIP
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const email = session.metadata.email || session.customer_details.email;
+      if (email) {
+        await User.findOneAndUpdate(
+          { email: email.toLowerCase() },
+          { isVip: true, stripeCustomerId: session.customer }
+        );
+        console.log(`[STRIPE] Assinatura VIP ativada com sucesso para: ${email}`);
+      }
+    }
+
+    // Cancela assinatura VIP
+    if (event.type === 'customer.subscription.deleted') {
+      const subscription = event.data.object;
+      await User.findOneAndUpdate(
+        { stripeCustomerId: subscription.customer },
+        { isVip: false }
+      );
+      console.log(`[STRIPE] Assinatura cancelada para o cliente: ${subscription.customer}`);
+    }
+
+    res.json({ received: true });
+  });
+
+  // Parsers normais do Express para as outras rotas
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
 
@@ -68,7 +114,6 @@ module.exports = (client) => {
 
   async function checkVerifiedEmail(req, res, next) {
     if (!req.session.user) return res.redirect('/login');
-    
     const dbUser = await User.findOne({ email: req.session.user.email });
     if (dbUser && dbUser.isVerified) {
       req.session.userRole = dbUser.role;
@@ -77,7 +122,7 @@ module.exports = (client) => {
     res.redirect('/verify-otp?email=' + encodeURIComponent(req.session.user.email));
   }
 
-  // --- ALERTA DE ACESSO SEGURO ---
+  // --- DISPARO DE ALERTAS DE ACESSO ---
   async function sendLoginAlertEmail(email, ip, userAgent) {
     if (process.env.BREVO_API_KEY) {
       try {
@@ -143,7 +188,6 @@ module.exports = (client) => {
         console.error('[ERRO DISPARO BREVO]', err.message);
       }
     }
-
     console.log('\n=============================================');
     console.log(`[CÓDIGO GERADO PARA ${email}]: ${code}`);
     console.log('=============================================\n');
@@ -158,11 +202,13 @@ module.exports = (client) => {
     });
   });
 
+  // Tela de Login
   app.get('/login', (req, res) => {
     if (req.session.user) return res.redirect('/dashboard');
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'login' });
   });
 
+  // POST Login Local (Acesso Instantâneo)
   app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/login?error=Preencha todos os campos.');
@@ -193,10 +239,12 @@ module.exports = (client) => {
     }
   });
 
+  // Tela de Cadastro
   app.get('/register', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'register' });
   });
 
+  // POST Cadastro Local - Envia OTP por e-mail para validar criação de conta
   app.post('/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect('/register?error=Preencha todos os campos.');
@@ -225,6 +273,7 @@ module.exports = (client) => {
     }
   });
 
+  // POST de Verificação do OTP de Cadastro (Cria no banco)
   app.post('/verify-otp', async (req, res) => {
     const { email, code } = req.body;
     const temp = req.session.tempUser;
@@ -264,6 +313,8 @@ module.exports = (client) => {
       res.redirect('/register?error=Erro ao criar usuário no banco.');
     }
   });
+
+  // --- RECUPERAÇÃO DE SENHA ---
 
   app.get('/forgot-password', (req, res) => {
     res.render('verify-email', { user: null, error: req.query.error || null, mode: 'forgot' });
@@ -317,6 +368,34 @@ module.exports = (client) => {
 
     sendSecurityEmail(email, otpCode);
     res.redirect(`/verify-otp?email=${encodeURIComponent(email)}`);
+  });
+
+  // --- STRIPE CHECKOUT ---
+  app.get('/stripe/checkout', checkAuth, async (req, res) => {
+    if (!stripe) return res.status(500).send('Stripe não está configurado.');
+
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: process.env.STRIPE_PRICE_ID, 
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${process.env.DASHBOARD_URL}/dashboard?checkout_success=true`,
+        cancel_url: `${process.env.DASHBOARD_URL}/dashboard?checkout_cancel=true`,
+        customer_email: req.session.user.email,
+        metadata: {
+          email: req.session.user.email
+        }
+      });
+      res.redirect(session.url);
+    } catch (err) {
+      console.error('[ERRO STRIPE CHECKOUT]', err);
+      res.status(500).send('Erro ao inicializar sessão de pagamento do Stripe.');
+    }
   });
 
   // --- DISCORD OAUTH2 ---
@@ -408,20 +487,29 @@ module.exports = (client) => {
     });
   });
 
-  // --- ROTAS DO DASHBOARD ---
+  // --- ROTAS DO PAINEL PRINCIPAL (ÚNICA E CORRETA) ---
 
-  app.get('/dashboard', checkAuth, checkVerifiedEmail, (req, res) => {
+  app.get('/dashboard', checkAuth, checkVerifiedEmail, async (req, res) => {
     if (!req.session.guilds) {
       return res.redirect('/verify-email-auth');
     }
-    res.render('dashboard', { 
-      user: req.session.user, 
-      guilds: req.session.guilds,
-      role: req.session.userRole 
-    });
+
+    try {
+      const dbUser = await User.findOne({ email: req.session.user.email });
+
+      res.render('dashboard', { 
+        user: req.session.user, 
+        guilds: req.session.guilds,
+        role: req.session.userRole,
+        isVip: dbUser ? dbUser.isVip : false,
+        query: req.query
+      });
+    } catch (err) {
+      res.status(500).send('Erro interno do servidor.');
+    }
   });
 
-  // 1. PÁGINA DE DESIGN DO PAINEL PÚBLICO (ABAS/SITE)
+  // Configuração individual de servidor
   app.get('/dashboard/:guildId', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     if (!req.session.guilds) return res.redirect('/verify-email-auth');
@@ -454,17 +542,20 @@ module.exports = (client) => {
         query: req.query
       });
     } catch (dbError) {
+      console.error('[ERRO BANCO NO DASHBOARD]', dbError);
       res.status(500).send('Erro de comunicação com o banco de dados.');
     }
   });
 
-  // Salvar alterações de Design (Página 1)
+  // Salvar configurações do Servidor
   app.post('/dashboard/:guildId/save', checkAuth, checkVerifiedEmail, async (req, res) => {
     const { guildId } = req.params;
     const userGuild = req.session.guilds.find(g => g.id === guildId);
     if (!userGuild) return res.sendStatus(403);
 
-    const { panelChannelId, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue, catStatus } = req.body;
+    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, panelChannelId, title, description, color, thumbnail, image, active, catLabel, catDesc, catEmoji, catValue, catStatus, maxTickets } = req.body;
+
+    const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
 
     try {
       const updatedCategories = [];
@@ -490,9 +581,13 @@ module.exports = (client) => {
         });
       }
 
-      await GuildConfig.findOneAndUpdate(
+      const config = await GuildConfig.findOneAndUpdate(
         { guildId },
         {
+          staffRoleIds: rolesArray,
+          logChannelId,
+          transcriptChannelId,
+          ticketCategory,
           panelChannelId,
           active: active === 'true',
           'panelEmbed.title': title,
@@ -500,100 +595,79 @@ module.exports = (client) => {
           'panelEmbed.color': color,
           'panelEmbed.thumbnail': thumbnail,
           'panelEmbed.image': image,
-          categories: updatedCategories
+          categories: updatedCategories,
+          maxTickets: parseInt(maxTickets || '3')
         },
-        { upsert: true }
+        { upsert: true, new: true }
       );
 
-      liveUpdatePanel(client, guildId);
+      // Envia painel de tickets público no canal selecionado
+      const discordGuild = client.guilds.cache.get(guildId);
+      if (discordGuild && panelChannelId) {
+        const targetChannel = discordGuild.channels.cache.get(panelChannelId);
+        
+        if (targetChannel) {
+          // Deleta mensagem anterior para evitar spam
+          if (config.panelChannelId && config.panelMessageId) {
+            const oldChannel = discordGuild.channels.cache.get(config.panelChannelId);
+            if (oldChannel) {
+              const oldMsg = await oldChannel.messages.fetch(config.panelMessageId).catch(() => null);
+              if (oldMsg) await oldMsg.delete().catch(() => null);
+            }
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(description)
+            .setColor(color || '#5865F2');
+
+          if (thumbnail) embed.setThumbnail(thumbnail);
+          if (image) embed.setImage(image);
+
+          const activeCategories = updatedCategories.filter(cat => cat.active !== false);
+
+          const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('ticket_category_select')
+            .setPlaceholder(active === 'true' ? 'Escolha uma categoria para receber atendimento...' : '❌ SISTEMA DE TICKETS DESATIVADO TEMPORARIAMENTE');
+
+          if (activeCategories.length === 0) {
+            selectMenu.addOptions({ label: 'Nenhuma categoria ativa', value: 'none', description: 'Contate o suporte.' });
+            selectMenu.setDisabled(true);
+          } else {
+            selectMenu.addOptions(
+              activeCategories.slice(0, 25).map(cat => ({
+                label: cat.label,
+                description: cat.description || '',
+                value: cat.value,
+                emoji: cat.emoji || undefined
+              }))
+            );
+            selectMenu.setDisabled(active !== 'true');
+          }
+
+          const row = new ActionRowBuilder().addComponents(selectMenu);
+          const publicMessage = await targetChannel.send({ embeds: [embed], components: [row] }).catch(() => null);
+
+          if (publicMessage) {
+            config.panelMessageId = publicMessage.id;
+            await config.save();
+          }
+        }
+      }
 
       res.redirect(`/dashboard/${guildId}?success=true`);
     } catch (dbError) {
+      console.error('[ERRO AO SALVAR CONFIGS]', dbError);
       res.status(500).send('Erro ao salvar as configurações.');
     }
   });
 
-  // NOVO: 2. PÁGINA EXCLUSIVA DE COMANDOS E CONFIGURAÇÃO DA STAFF (/admin)
-  app.get('/dashboard/:guildId/admin', checkAuth, checkVerifiedEmail, async (req, res) => {
-    const { guildId } = req.params;
-    if (!req.session.guilds) return res.redirect('/verify-email-auth');
-
-    const userGuild = req.session.guilds.find(g => g.id === guildId);
-    if (!userGuild) return res.redirect('/dashboard');
-
-    const discordGuild = client.guilds.cache.get(guildId);
-    if (!discordGuild) {
-      return res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id=${guildId}`);
-    }
-
-    try {
-      let config = await GuildConfig.findOne({ guildId });
-      if (!config) config = await GuildConfig.create({ guildId });
-
-      const channels = discordGuild.channels.cache
-        .filter(c => c.type === 0 || c.type === 4)
-        .map(c => ({ id: c.id, name: c.name, type: c.type }));
-        
-      const roles = discordGuild.roles.cache.map(r => ({ id: r.id, name: r.name }));
-
-      res.render('guild-admin', { 
-        user: req.session.user, 
-        guild: userGuild, 
-        config,
-        channels,
-        roles,
-        role: req.session.userRole,
-        query: req.query
-      });
-    } catch (dbError) {
-      res.status(500).send('Erro de comunicação com o banco de dados.');
-    }
-  });
-
-  // Salvar alterações de Administração/Staff (Página 2)
-  app.post('/dashboard/:guildId/admin/save', checkAuth, checkVerifiedEmail, async (req, res) => {
-    const { guildId } = req.params;
-    const userGuild = req.session.guilds.find(g => g.id === guildId);
-    if (!userGuild) return res.sendStatus(403);
-
-    const { staffRoleIds, logChannelId, transcriptChannelId, ticketCategory, maxTickets } = req.body;
-    const rolesArray = Array.isArray(staffRoleIds) ? staffRoleIds : (staffRoleIds ? [staffRoleIds] : []);
-
-    try {
-      await GuildConfig.findOneAndUpdate(
-        { guildId },
-        {
-          staffRoleIds: rolesArray,
-          logChannelId,
-          transcriptChannelId,
-          ticketCategory,
-          maxTickets: parseInt(maxTickets || '3')
-        },
-        { upsert: true }
-      );
-
-      res.redirect(`/dashboard/${guildId}/admin?success=true`);
-    } catch (dbError) {
-      res.status(500).send('Erro ao salvar as configurações.');
-    }
-  });
-
-  app.post('/developer/presence', checkAuth, checkVerifiedEmail, (req, res) => {
+  // --- NOVA PÁGINA EXCLUSIVA DO DESENVOLVEDOR (Apenas mafiosodashopping@gmail.com) ---
+  app.get('/dashboard/bot/admin', checkAuth, checkVerifiedEmail, (req, res) => {
     if (req.session.userRole !== 'superadmin') {
       return res.status(403).send('Acesso não autorizado.');
     }
-
-    const { activityName, activityType, status } = req.body;
-
-    client.user.setPresence({
-      status: status || 'online',
-      activities: [{
-        name: activityName || 'canais de suporte',
-        type: parseInt(activityType || '3')
-      }]
-    });
-
-    res.redirect('/dashboard?presence_success=true');
+    res.render('bot-admin', { user: req.session.user, role: req.session.userRole, query: req.query });
   });
 
   const PORT = process.env.PORT || 3000;
